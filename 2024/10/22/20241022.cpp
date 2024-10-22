@@ -209,6 +209,7 @@ int Spirit::alivenumber = 0;
 
 int main()
 {
+	srand(time(0));
     Spirit a;
     a.getInfo();
 
@@ -224,7 +225,7 @@ int main()
     b.getAliveNumber();
 
     Spirit arr[10];
-    srand(time(0));
+     
     for (int i = 0; i < 10; i++)
     {
         string name = getRandomName();
