@@ -95,7 +95,7 @@ public:
 		return y;
 	}
 
-	void setPositionY(int y_)  { y = y_; }
+	void setPositionY(int y_) { y = y_; }
 
 	double getRadius()
 	{
@@ -332,7 +332,7 @@ void Start()
 	loadimage(&img, _T("images/Start.jpg"));
 	putimage(0, 0, &img);
 	settextstyle(50, 0, _T("微软雅黑")); // 设置字体大小为50，使用微软雅黑字体
-	outtextxy(0, 0, _T("按任意键"));
+	//outtextxy(0, 0, _T("按任意键"));
 	//_getch();
 	Sleep(500);
 	//outtextxy(width * 3 / 4, height / 2, "Game start now!!!");
@@ -361,8 +361,8 @@ void Init()
 	for (int i = 0; i < enemynum; i++)
 	{
 		string name = getRandomName();
-		int x = rand() % (mapw-10)+5;
-		int y = rand() % (maph-10)+5;
+		int x = rand() % (mapw - 10) + 5;
+		int y = rand() % (maph - 10) + 5;
 		double r = rand() % 5 + 5;
 		Enemy[i] = Spirit(name, x, y, r, RGB(rand() % 256, rand() % 256, rand() % 256));
 	}
@@ -397,8 +397,17 @@ void Draw()//绘制地图,展示精灵和食物位置
 	}
 
 	//绘制玩家
+	int PlayerX = Player.getPositionX();
+	int PlayerY = Player.getPositionY();
+	double PlayerR = Player.getRadius();
 	setfillcolor(BLUE);
-	fillcircle(Player.getPositionX(), Player.getPositionY(), Player.getRadius());
+	if (PlayerX<PlayerR || PlayerX + PlayerR>mapw || PlayerY < PlayerR || PlayerY + PlayerR>maph)
+	{
+		HWND hwnd = GetHWnd();
+		MessageBox(hwnd, _T("    You are too big"), _T("WIN"), MB_ICONWARNING);
+		closegraph();
+	}
+	fillcircle(Player.getPositionX(), Player.getPositionY(), (int)Player.getRadius());
 
 	//绘制敌人
 	for (int i = 0; i < enemynum; i++)
@@ -408,13 +417,13 @@ void Draw()//绘制地图,展示精灵和食物位置
 			continue;
 		}
 		setfillcolor(Enemy[i].getColor());
-		fillcircle(Enemy[i].getPositionX(), Enemy[i].getPositionY(), Enemy[i].getRadius());
+		fillcircle(Enemy[i].getPositionX(), Enemy[i].getPositionY(), (int)Enemy[i].getRadius());
 	}
 }
 
 void Delay(DWORD ms)
 {
-	static DWORD oldtime = GetTickCount();
+	static DWORD oldtime = GetTickCount(); //返回系统启动以来经过的毫秒数,超过49.7天溢出清零
 	while (GetTickCount() - oldtime < ms)
 	{
 		Sleep(1);//只sleep 1ms 误差更小
@@ -428,20 +437,22 @@ void MovePlayer()
 	int x = Player.getPositionX();
 	int y = Player.getPositionY();
 	double r = Player.getRadius();
-	if ((GetAsyncKeyState('W') & 0x8000) && deltay <= height / 2&&y-r>=5) {
-		Player.setPositionY(y- 5);
+	if ((GetAsyncKeyState('W')) && y - r >= 5) {
+		Player.setPositionY(y - 5);
+		y = Player.getPositionY();
 		deltay += 5;
 	}
-	if ((GetAsyncKeyState('A') & 0x8000) && deltax <= width / 2&&x-r>=5) {
-		Player.setPositionX(x -5);
-		deltax += 5;
-	}
-	if ((GetAsyncKeyState('S') & 0x8000) && deltay >= height / 2 - maph&&y+r+5<=maph) {
-		Player.setPositionY(y+5);
+	if ((GetAsyncKeyState('S')) && y + r + 5 <= maph) {
+		Player.setPositionY(y + 5);
 		deltay -= 5;
 	}
-	if ((GetAsyncKeyState('D') & 0x8000) && deltax >= width / 2 - mapw&&x+5+r<=mapw) {
-		Player.setPositionX(x+5);
+	if ((GetAsyncKeyState('A')) && x - r >= 5) {
+		Player.setPositionX(x - 5);
+		x = Player.getPositionX();
+		deltax += 5;
+	}
+	if ((GetAsyncKeyState('D')) && x + 5 + r <= mapw) {
+		Player.setPositionX(x + 5);
 		deltax -= 5;
 	}
 	setorigin(deltax, deltay);
@@ -449,11 +460,11 @@ void MovePlayer()
 
 void MoveEnemy()
 {
-	 
-	const int k = 5;
+
+	const int k = 10;//控制移动速度
 	for (int i = 0; i < enemynum; i++)
 	{
-		if (Enemy[i].getaliveState()==false)
+		if (Enemy[i].getaliveState() == false)
 		{
 			continue;
 		}
@@ -461,7 +472,7 @@ void MoveEnemy()
 		int r = Enemy[i].getRadius();
 		int x = Enemy[i].getPositionX();
 		int y = Enemy[i].getPositionY();
-		if(rand()%2)
+		if (rand() % 2)
 		{
 			if (x + k * f + r <= mapw && x - r + k * f >= 0)
 			{
@@ -484,40 +495,50 @@ void Judge()
 	int PlayerY = Player.getPositionY();
 	double PlayerR = Player.getRadius();
 	//玩家和食物
+	const int K1 = 5;//控制玩家体积增长
 	for (int i = 0; i < foodnum; i++)
 	{
 		double dis = sqrt((food[i].x - PlayerX) * (food[i].x - PlayerX) +
 			(food[i].y - PlayerY) * (food[i].y - PlayerY));//确保不会爆int
 		double r = Player.getRadius();
-		if (dis <=r + 1)
+		if (dis <= r + 1)
 		{
 			food[i].state = false;
-			double NewVolumn = Pi * r * r + 20;
+			double NewVolumn = Pi * r * r + K1;
 			double NewRadius = sqrt(NewVolumn / Pi);
 			Player.setRadius(NewRadius);
 		}
 	}
 
 	//敌人和食物
+	const int K2 = 10;//控制敌人体积增长
 	for (int i = 0; i < enemynum; i++)
 	{
 		int x = Enemy[i].getPositionX();
 		int y = Enemy[i].getPositionY();
 		double r = Enemy[i].getRadius();
-		double dis = sqrt((food[i].x - x) * (food[i].x - x) +
-			(food[i].y - y) * (food[i].y - y));//确保不会爆int
-		if (dis <= r + 1&&food[i].state==true)
+		for (int j = 0; j < foodnum; j++)
 		{
-			food[i].state = false;
-			double NewVolumn = Pi * r * r + 50;
-			double NewRadius = sqrt(NewVolumn / Pi);
-			Enemy[i].setRadius(NewRadius);
+			double dis = sqrt((food[j].x - x) * (food[j].x - x) +
+				(food[j].y - y) * (food[j].y - y));//确保不会爆int
+			if (dis <= r + 1 && food[j].state == true)
+			{
+				food[i].state = false;
+				double NewVolumn = Pi * r * r + K2;
+				double NewRadius = sqrt(NewVolumn / Pi);
+				Enemy[i].setRadius(NewRadius);
+			}
 		}
+
 	}
 
 	//玩家和敌人
 	for (int i = 0; i < enemynum; i++)
 	{
+		if (Enemy[i].getaliveState() == false)
+		{
+			continue;
+		}
 		int x = Enemy[i].getPositionX();
 		int y = Enemy[i].getPositionY();
 		double r = Enemy[i].getRadius();
@@ -526,20 +547,59 @@ void Judge()
 		double PlayerR = Player.getRadius();
 		double dis = sqrt((x - PlayerX) * (x - PlayerX) +
 			(y - PlayerY) * (y - PlayerY));//确定不会爆int
-		if (dis <=  r + PlayerR)
+		if (dis <= r + PlayerR)
 		{
 			if (PlayerR < r)
 			{
 				HWND hwnd = GetHWnd();
-				MessageBox(hwnd, _T("You are dead"), _T("LOSER"), MB_ICONQUESTION);
+				MessageBox(hwnd, _T("    You are dead"), _T("LOSER"), MB_ICONWARNING);
+				closegraph();
 			}
 			else
 			{
 				Enemy[i].setaliveState(false);
-				double NewVolumn = Pi * (r * r +PlayerR*PlayerR );
+				double NewVolumn = Pi * (r * r + PlayerR * PlayerR);
 				double NewRadius = sqrt(NewVolumn / Pi);
 				Player.setRadius(NewRadius);
 			}
 		}
 	}
+
+	// 敌人和敌人
+	for (int i = 0; i < enemynum; i++)
+	{
+		for (int j = 0; j < enemynum; j++)
+		{
+			if (i != j && Enemy[i].getaliveState() == true && Enemy[j].getaliveState() == true)
+			{
+				int x1 = Enemy[i].getPositionX();
+				int y1 = Enemy[i].getPositionY();
+				double r1 = Enemy[i].getRadius();
+				int x2 = Enemy[j].getPositionX();
+				int y2 = Enemy[j].getPositionY();
+				double r2 = Enemy[j].getRadius();
+
+				double dis = sqrt((x1 - x2) * (x1 - x2) +
+					(y1 - y2) * (y1 - y2));//确定不会爆int
+				if (dis <= r1 + r2)
+				{
+					if (r1 >= r2)
+					{
+						Enemy[j].setaliveState(false);
+						double NewVolumn = Pi * (r1 * r1 + r2 * r2);
+						double NewRadius = sqrt(NewVolumn / Pi);
+						Enemy[i].setRadius(NewRadius);
+					}
+					else
+					{
+						Enemy[i].setaliveState(false);
+						double NewVolumn = Pi * (r1 * r1 + r2 * r2);
+						double NewRadius = sqrt(NewVolumn / Pi);
+						Enemy[j].setRadius(NewRadius);
+					}
+				}
+			}
+		}
+	}
+
 }
