@@ -13,7 +13,7 @@
 using ll = long long;
 int vis[3500][3500]; // vis[x][y]=1表示(i,j)位置有精灵
 
-std::string getRandomName()
+std::string GetRandomName()
 {
 	std::string name;
 	for (int i = 0; i < 3; i++)
@@ -24,19 +24,19 @@ std::string getRandomName()
 }
 class Spirit
 {
-
 	std::string name = "Empty";
 	int x = 0, y = 0, health = 1000;
-	bool aliveState = true;
-	static int number, alivenumber;
+	bool AliveState = true;
+	static int number, AliveNumber;
 	double r = 1;//精灵半径
 	COLORREF color;
+	SOCKET socket;
 public:
 	Spirit()
 	{
 		number++;
-		alivenumber++;
-		name = getRandomName();
+		AliveNumber++;
+		name = GetRandomName();
 		x = rand() % 201;
 		y = rand() % 201;
 		vis[x][y] = 1;
@@ -45,7 +45,7 @@ public:
 	Spirit(std::string name_, int x_, int y_) : name(name_), x(x_), y(y_)
 	{
 		number++;
-		alivenumber++;
+		AliveNumber++;
 		vis[x][y] = 1;
 	}
 
@@ -53,16 +53,18 @@ public:
 
 	Spirit(std::string name_, int x_, int y_, double r_, COLORREF color_) :name(name_), x(x_), y(y_), r(r_), color(color_) {}
 
-	void takeDamage(int damage)
+	Spirit(std::string name_, int x_, int y_, double r_, COLORREF color_, SOCKET socket_) :name(name_), x(x_), y(y_), r(r_), color(color_), socket(socket_) {}
+
+	void TakeDamage(int damage)
 	{
-		if (aliveState == true)
+		if (AliveState == true)
 		{
 			dodge(damage);
 			if (health <= damage)
 			{
 				health = 0;
-				aliveState = false;
-				alivenumber--;
+				AliveState = false;
+				AliveNumber--;
 				vis[x][y]--;
 			}
 			else
@@ -72,7 +74,7 @@ public:
 		}
 	}
 
-	void setPosition(int newx, int newy)
+	void SetPosition(int newx, int newy)
 	{
 		if (newx < 0 || newx > 200)
 		{
@@ -86,69 +88,84 @@ public:
 		y = newy;
 	}
 
-	int getPositionX()
+	void SetName(std::string name_)
+	{
+		name = name_;
+	}
+
+	void SetColor(unsigned int color_)
+	{
+		color = color_;
+	}
+
+	int GetPositionX()
 	{
 		return x;
 	}
 
-	void setPositionX(int x_) { x = x_; }
+	void SetPositionX(int x_) { x = x_; }
 
-	int getPositionY()
+	int GetPositionY()
 	{
 		return y;
 	}
 
-	void setPositionY(int y_) { y = y_; }
+	void SetPositionY(int y_) { y = y_; }
 
-	double getRadius()
+	double GetRadius()
 	{
 		return r;
 	}
 
-	void setRadius(double r_)
+	void SetRadius(double r_)
 	{
 		r = r_;
 	}
 
-	void setaliveState(bool state)
+	void SetAliveState(bool state)
 	{
-		aliveState = state;
+		AliveState = state;
 	}
 
-	COLORREF getColor()
+	COLORREF GetColor()
 	{
 		return color;
 	}
-	std::string getName()
+	std::string GetName()
 	{
 		return name;
 	}
 
-	int getHealth()
+	int GetHealth()
 	{
 		return health;
 	}
 
-	int getNumber()
+	int GetNumber()
 	{
 		return number;
 	}
 
-	int getAliveNumber()
+	int GetAliveNumber()
 	{
-		return alivenumber;
+		return AliveNumber;
 	}
 
-	bool getaliveState()
+	bool GetAliveState()
 	{
-		return aliveState;
+		return AliveState;
 	}
 
-	void getInfo()
+	SOCKET GetSocket()
+	{
+		return socket;
+	}
+
+	void GetInfo()
 	{
 		std::cout << "name is " << name << "\n";
 		std::cout << "health is " << health << "\n";
-		std::cout << "aliveState is " << std::boolalpha << aliveState << "\n";
+		std::cout << "AliveState is " << std::boolalpha << AliveState << "\n";
 		std::cout << "x is " << x << "\n";
 		std::cout << "y is " << y << "\n";
 		std::cout << "\n";
@@ -158,9 +175,9 @@ public:
 		// 额外技能1:攻击
 	{
 		int damage = rand() % 500;
-		if (target.aliveState)
+		if (target.AliveState)
 		{
-			if (!aliveState)
+			if (!AliveState)
 			{
 				std::cout << name << " is not alive\n\n";
 			}
@@ -192,7 +209,7 @@ public:
 	void heal(int add)
 		// 额外技能2:治疗
 	{
-		if (!aliveState)
+		if (!AliveState)
 		{
 			std::cout << name << " is not alive\n\n";
 		}
@@ -206,7 +223,7 @@ public:
 	void move(int newx, int newy)
 		// 额外技能3:移动
 	{
-		if (!aliveState)
+		if (!AliveState)
 		{
 			std::cout << name << " is not alive\n\n";
 		}
@@ -229,9 +246,21 @@ public:
 		}
 	}
 
+	Json::Value ToJson()const
+	{
+		Json::Value val;
+		val["x"] = x;
+		val["y"] = r;
+		val["r"] = r;
+		val["name"] = name;
+		val["AliveState"] = AliveState;
+		val["AliveNumber"] = AliveNumber;
+		val["COLORREF"] = (unsigned int)color;
+		val["socket"] = socket;
+	}
 };
 int Spirit::number = 0;
-int Spirit::alivenumber = 0;
+int Spirit::AliveNumber = 0;
 
 void CompulsoryTask();
 void SelectedTask();
@@ -247,160 +276,74 @@ void Test()
 	object["name"] = "LETTTER";
 	object["age"] = "18";
 	object["array"] = array;
-	
+
 	/*std::string str = object.toStyledString();
 	auto tmp = reader.parse(str,object);
 	std::cout << str << "\n";*/
 }
 int main()
 {
-	 
-	//CompulsoryTask();
+
+	CompulsoryTask();
 	SelectedTask();
 	return 0;
 }
 
-
-void ServerWork()
-{
-	//其实应该每一步都检查是否成功的，“有时间”再改
-	while (1)
-	{
-		//如果accept一个客户端就分配给它精灵的地址,写成一个函数
-		if (socketManager.ServerAcceptClient())
-		{
-			std::string name = getRandomName();
-			int PlayerX = rand() % (mapw - 10) + 5;
-			int PlayerY = rand() % (maph - 10) + 5;
-			double PlayerR = rand() % 5 + 5;
-			while (1)
-			{
-				//判断精灵和敌人是否相交
-				int f = 1;
-				for (int i = 0; i < enemynum; i++)
-				{
-					if (Enemies[i].getaliveState() == false)
-					{
-						continue;
-					}
-					int x = Enemies[i].getPositionX();
-					int y = Enemies[i].getPositionY();
-					double r = Enemies[i].getRadius();
-					double dis = sqrt((x - PlayerX) * (x - PlayerX) + (y - PlayerY) * (y - PlayerY));//确定不会爆int
-					if (dis <= r + PlayerR)
-					{
-						f = 0;
-						break;
-					}
-				}
-				//判断精灵之间是否相交
-				for (int i = 0; i < Players.size(); i++)
-				{
-					if (Players[i].getaliveState() == false)
-					{
-						continue;
-					}
-					int x = Players[i].getPositionX();
-					int y = Players[i].getPositionY();
-					double r = Players[i].getRadius();
-					double dis = sqrt((x - PlayerX) * (x - PlayerX) + (y - PlayerY) * (y - PlayerY));//确定不会爆int
-					if (dis <= r + PlayerR)
-					{
-						f = 0;
-						break;
-					}
-				}
-				if (f)
-				{
-					break;
-				}
-				PlayerX = rand() % (mapw - 10) + 5;
-				PlayerY = rand() % (maph - 10) + 5;
-				PlayerR = rand() % 5 + 5;
-			}
-			COLORREF color = RGB(rand() % 256, rand() % 256, rand() % 256);
-			Players.push_back(Spirit(name, PlayerX, PlayerY, PlayerR, color));
-			Json::Value msg;
-			msg["name"] = name;
-			msg["x"] = PlayerX;
-			msg["y"] = PlayerY;
-			msg["r"] = PlayerR;
-			msg["color"] = unsigned int(color);
-			SOCKET Client = socketManager.GetClientSockets().back();
-			socketManager.ServerSendMsg(Client, msg);
-		}
-		//接受每个客户端的消息
-		socketManager.ServerRecClientsMsg();
-		socketManager.ServerTest();//服务端向客户端发送数据成功
-		Sleep(200);
-	}
-}
-void ClientWork()
-{
-	socketManager.StartClient();
-	while (1)
-	{
-		//socketManager.ClientSendMsg();
-		socketManager.ClientTest();
-		socketManager.ClientRecMsg();
-		Sleep(200);
-	}
-}
 void CompulsoryTask()
 {
 	Spirit a;
-	a.getInfo();
+	a.GetInfo();
 
 	Spirit b("LETTER", 100, 100);
-	b.getInfo();
-	b.takeDamage(100);
-	b.getInfo();
-	b.setPosition(200, 200);
-	b.getPositionX();
-	b.getPositionY();
-	b.getName();
-	b.getHealth();
-	b.getAliveNumber();
+	b.GetInfo();
+	b.TakeDamage(100);
+	b.GetInfo();
+	b.SetPosition(200, 200);
+	b.GetPositionX();
+	b.GetPositionY();
+	b.GetName();
+	b.GetHealth();
+	b.GetAliveNumber();
 
 	Spirit arr[10];
 	srand(time(0));
 	for (int i = 0; i < 10; i++)
 	{
-		std::string name = getRandomName();
+		std::string name = GetRandomName();
 		int x = rand() % 200;
 		int y = rand() % 200;
 		arr[i] = Spirit(name, x, y);
 		std::cout << i + 1 << "th spirit:\n";
-		arr[i].getInfo();
+		arr[i].GetInfo();
 	}
 
 	for (int i = 0; i < 10; i++)
 	{
-		arr[i].takeDamage(rand() % 1500);
+		arr[i].TakeDamage(rand() % 1500);
 		arr[i].heal(rand() % 1000);
 		arr[i].move(rand() % 201, rand() % 201);
 		arr[i].attack(arr[(i + 1) % 10]);
 	}
 	for (int i = 0; i < 10; i++)
 	{
-		arr[i].getInfo();
+		arr[i].GetInfo();
 	}
 }
 
 void Start();
 void Init();
 void Draw();
-void Delay(DWORD ms);
+void Delay(DWORD);
 void CreateFood();
 void MovePlayer();
 void MoveEnemy();
 void Judge();
 void SetCursor();
-
+bool ClientProcessMsg();
 const int width = 800, height = 780;
 const int mapw = width * 4, maph = height * 4;
 const int foodnum = 5000;
-const int enemynum = 100;
+const int EnemyNum = 100;
 std::string UserName;
 struct FOOD {
 	int x, y, type;
@@ -409,7 +352,7 @@ struct FOOD {
 }food[foodnum];
 Spirit Player("LETTER", width / 2, height / 2, 10, RGB(0, 100, 97));
 std::vector<Spirit>Players;
-Spirit Enemies[enemynum];
+Spirit Enemy[EnemyNum];
 const int FPS = 75;
 
 void SelectedTask()
@@ -425,22 +368,205 @@ void SelectedTask()
 		SetCursor();
 		Start();//设置开始界面
 		BeginBatchDraw();//批量绘图,消除闪烁问题
-		Init();//初始化Enemies和食物
-		ClientWork();
-
+		socketManager.StartClient();
 	}
-	 
+
+	//要先等到服务端的"Init"命令初始化Player
+	do {
+
+	} while (!ClientProcessMsg());
+	if (Player.GetName() == "LETTER")
+	{
+		std::cout << "ClientProcessMsgError\n";
+		return;
+	}
 	while (1)
 	{
+		ClientProcessMsg();
 		Draw();//画出玩家,食物,敌人
-		MovePlayer();//玩家移动
-		MoveEnemy();//敌人移动
-		Judge();//判断玩家,敌人,食物是否有重合
-		CreateFood();//刷新食物
+		MovePlayer();//玩家移动,需要加入服务端的判定 
+		MoveEnemy();//敌人移动,需要加入服务端的判定 
+		Judge();//判断玩家,敌人,食物是否有重合,服务端专用
+		CreateFood();//刷新食物,服务端专用
 		Delay(1000 / FPS);//锁帧
 		FlushBatchDraw();
 	}
 }
+
+void AssignAddress()
+{
+	std::string name = GetRandomName();
+	int PlayerX = rand() % (mapw - 10) + 5;
+	int PlayerY = rand() % (maph - 10) + 5;
+	double PlayerR = rand() % 5 + 5;
+	while (1)
+	{
+		//判断精灵和敌人是否相交
+		int f = 1;
+		for (int i = 0; i < EnemyNum; i++)
+		{
+			if (Enemy[i].GetAliveState() == false)
+			{
+				continue;
+			}
+			int x = Enemy[i].GetPositionX();
+			int y = Enemy[i].GetPositionY();
+			double r = Enemy[i].GetRadius();
+			double dis = sqrt((x - PlayerX) * (x - PlayerX) + (y - PlayerY) * (y - PlayerY));//确定不会爆int
+			if (dis <= r + PlayerR)
+			{
+				f = 0;
+				break;
+			}
+		}
+		//判断精灵之间是否相交
+		for (int i = 0; i < Players.size(); i++)
+		{
+			if (Players[i].GetAliveState() == false)
+			{
+				continue;
+			}
+			int x = Players[i].GetPositionX();
+			int y = Players[i].GetPositionY();
+			double r = Players[i].GetRadius();
+			double dis = sqrt((x - PlayerX) * (x - PlayerX) + (y - PlayerY) * (y - PlayerY));//确定不会爆int
+			if (dis <= r + PlayerR)
+			{
+				f = 0;
+				break;
+			}
+		}
+		if (f)
+		{
+			break;
+		}
+		PlayerX = rand() % (mapw - 10) + 5;
+		PlayerY = rand() % (maph - 10) + 5;
+		PlayerR = rand() % 5 + 5;
+	}
+	COLORREF color = RGB(rand() % 256, rand() % 256, rand() % 256);
+	SOCKET ClientSocket = socketManager.GetClientSockets().back();
+	Players.push_back(Spirit(name, PlayerX, PlayerY, PlayerR, color, ClientSocket));
+
+	Json::Value msg;
+	msg["type"] = "Self";
+	msg["name"] = name;
+	msg["x"] = PlayerX;
+	msg["y"] = PlayerY;
+	msg["r"] = PlayerR;
+	msg["color"] = unsigned int(color);
+
+	socketManager.ServerSendMsg(ClientSocket, msg);
+}
+Json::Value FoodToJson()
+{
+	Json::Value val;
+	for (int i = 0; i < foodnum; i++)
+	{
+		Json::Value tmp;
+		tmp["x"] = food[i].x;
+		tmp["y"] = food[i].y;
+		tmp["state"] = food[i].state;
+		tmp["type"] = food[i].type;
+		tmp["color"] = (unsigned int)food[i].color;
+		val.append(tmp);
+	}
+	return val;
+}
+void ServerSendInfo()
+{
+	Json::Value EnemyJson,PlayersJson;
+	for (int i = 0; i < EnemyNum; i++)
+	{
+		EnemyJson[i] = Enemy[i].ToJson();
+	}
+	for (int i = 0; i < Players.size(); i++)
+	{
+		PlayersJson[i] = Players[i].ToJson();
+	}
+	Json::Value msg;
+	msg["type"] = "Player";
+	msg["food"] = FoodToJson();
+	msg["Enemy"] = EnemyJson;
+	msg["Players"] = PlayersJson;//Json数组,元素是对象
+	for (int i = 0; i < Players.size(); i++)
+	{
+		if (Players[i].GetAliveState())
+		{
+			int ClientSocket = Players[i].GetSocket();
+			socketManager.ServerSendMsg(ClientSocket, msg);
+		}
+	}
+}
+bool ClientProcessMsg()
+{
+	Json::Value msg = socketManager.ClientRecMsg();
+	if (msg == Json::nullValue)
+	{
+		return false;
+	}
+	if (msg["type"].asString() == "Init")
+	{
+		Player.SetPositionX(msg["x"].asInt());
+		Player.SetPositionY(msg["y"].asInt());
+		Player.SetRadius(msg["r"].asInt());
+		Player.SetName(msg["name"].asString());
+		Player.SetColor(msg["color"].asInt());
+	}
+	else if (msg["type"].asString() == "Player")
+	{
+		for (int i = 0; i < foodnum; i++)
+		{
+			food[i].type = msg["food"][i]["type"].asInt();
+			food[i].x= msg["food"][i]["x"].asInt();
+			food[i].y = msg["food"][i]["y"].asInt();
+			food[i].state = msg["food"][i]["state"].asBool();
+			food[i].color = msg["food"][i]["color"].asInt();
+		}
+		for (int i = 0; i < EnemyNum; i++)
+		{
+			Enemy[i].SetPositionX(msg["Enemy"]["x"].asInt());
+			Enemy[i].SetPositionY(msg["Enemy"]["y"].asInt());
+			Enemy[i].SetRadius(msg["Enemy"]["r"].asInt());
+			Enemy[i].SetColor(msg["Enemy"]["color"].asInt());
+			Enemy[i].SetAliveState(msg["Enemy"]["AliveState"].asBool());
+		}
+		Players.clear();
+		for (int i = 0; i < msg["Players"].size(); i++)
+		{
+			Players[i].SetPositionX(msg["Players"][i]["x"].asInt());
+			Players[i].SetPositionY(msg["Players"][i]["y"].asInt());
+			Players[i].SetRadius(msg["Players"][i]["r"].asInt());
+			Players[i].SetColor(msg["Players"][i]["r"].asInt());
+			Players[i].SetAliveState(msg["Players"][i]["r"].asBool());
+			Players[i].SetName(msg["Players"][i]["r"].asString());
+		}
+	}
+	else
+	{
+		std::cout << "ClientProcessMsg Fail\n";
+	}
+	return true;
+}
+void ServerWork()
+{
+	//其实应该每一步都检查是否成功的，“有时间”再改
+	Init();//初始化食物和enemy
+	while (1)
+	{
+		if (socketManager.ServerAcceptClient())
+		{
+			AssignAddress();//分配地址
+		}
+		ServerSendInfo();
+		//接受每个客户端的消息(WASD)
+		//socketManager.ServerRecClientsMsg();
+		//socketManager.ServerTest();//服务端向客户端发送数据成功
+		CreateFood();
+		Sleep(200);//测试完删除
+	}
+}
+
 
 void SetCursor()
 {
@@ -477,17 +603,17 @@ void CreateFood()//刷新食物
 	}
 }
 
-void Init()
+void Init()//服务端专用
 {
-	//初始化食物和Enemies
+	//初始化食物和Enemy
 	CreateFood();
-	for (int i = 0; i < enemynum; i++)
+	for (int i = 0; i < EnemyNum; i++)
 	{
-		std::string name = getRandomName();
+		std::string name = GetRandomName();
 		int x = rand() % (mapw - 10) + 5;
 		int y = rand() % (maph - 10) + 5;
 		double r = rand() % 5 + 5;
-		Enemies[i] = Spirit(name, x, y, r, RGB(rand() % 256, rand() % 256, rand() % 256));
+		Enemy[i] = Spirit(name, x, y, r, RGB(rand() % 256, rand() % 256, rand() % 256));
 	}
 }
 
@@ -521,9 +647,9 @@ void Draw()//绘制地图,展示精灵和食物位置
 	}
 
 	//绘制玩家
-	int PlayerX = Player.getPositionX();
-	int PlayerY = Player.getPositionY();
-	double PlayerR = Player.getRadius();
+	int PlayerX = Player.GetPositionX();
+	int PlayerY = Player.GetPositionY();
+	double PlayerR = Player.GetRadius();
 	setfillcolor(BLUE);
 	if (PlayerX<PlayerR || PlayerX + PlayerR>mapw || PlayerY < PlayerR || PlayerY + PlayerR>maph)
 	{
@@ -531,17 +657,17 @@ void Draw()//绘制地图,展示精灵和食物位置
 		MessageBox(hwnd, _T("    You are too big"), _T("WIN"), MB_ICONWARNING);
 		closegraph();
 	}
-	fillcircle(Player.getPositionX(), Player.getPositionY(), (int)Player.getRadius());
+	fillcircle(Player.GetPositionX(), Player.GetPositionY(), (int)Player.GetRadius());
 
 	//绘制敌人
-	for (int i = 0; i < enemynum; i++)
+	for (int i = 0; i < EnemyNum; i++)
 	{
-		if (Enemies[i].getaliveState() == false)
+		if (Enemy[i].GetAliveState() == false)
 		{
 			continue;
 		}
-		setfillcolor(Enemies[i].getColor());
-		fillcircle(Enemies[i].getPositionX(), Enemies[i].getPositionY(), (int)Enemies[i].getRadius());
+		setfillcolor(Enemy[i].GetColor());
+		fillcircle(Enemy[i].GetPositionX(), Enemy[i].GetPositionY(), (int)Enemy[i].GetRadius());
 	}
 }
 
@@ -558,25 +684,25 @@ void Delay(DWORD ms)
 void MovePlayer()
 {
 	static int deltax = 0, deltay = 0;
-	int x = Player.getPositionX();
-	int y = Player.getPositionY();
-	double r = Player.getRadius();
+	int x = Player.GetPositionX();
+	int y = Player.GetPositionY();
+	double r = Player.GetRadius();
 	if ((GetAsyncKeyState('W')) && y - r >= 5) {
-		Player.setPositionY(y - 5);
-		y = Player.getPositionY();
+		Player.SetPositionY(y - 5);
+		y = Player.GetPositionY();
 		deltay += 5;
 	}
 	if ((GetAsyncKeyState('S')) && y + r + 5 <= maph) {
-		Player.setPositionY(y + 5);
+		Player.SetPositionY(y + 5);
 		deltay -= 5;
 	}
 	if ((GetAsyncKeyState('A')) && x - r >= 5) {
-		Player.setPositionX(x - 5);
-		x = Player.getPositionX();
+		Player.SetPositionX(x - 5);
+		x = Player.GetPositionX();
 		deltax += 5;
 	}
 	if ((GetAsyncKeyState('D')) && x + 5 + r <= mapw) {
-		Player.setPositionX(x + 5);
+		Player.SetPositionX(x + 5);
 		deltax -= 5;
 	}
 	setorigin(deltax, deltay);
@@ -585,28 +711,28 @@ void MovePlayer()
 void MoveEnemy()
 {
 	const int k = 5;//控制移动速度
-	for (int i = 0; i < enemynum; i++)
+	for (int i = 0; i < EnemyNum; i++)
 	{
-		if (Enemies[i].getaliveState() == false)
+		if (Enemy[i].GetAliveState() == false)
 		{
 			continue;
 		}
 		int f = rand() % 2 ? 1 : -1;
-		int r = Enemies[i].getRadius();
-		int x = Enemies[i].getPositionX();
-		int y = Enemies[i].getPositionY();
+		int r = Enemy[i].GetRadius();
+		int x = Enemy[i].GetPositionX();
+		int y = Enemy[i].GetPositionY();
 		if (rand() % 2)
 		{
 			if (x + k * f + r <= mapw && x - r + k * f >= 0)
 			{
-				Enemies[i].setPositionX(x + k * f);
+				Enemy[i].SetPositionX(x + k * f);
 			}
 		}
 		else
 		{
 			if (y + k * f + r <= maph && y - r + k * f >= 0)
 			{
-				Enemies[i].setPositionY(y + k * f);
+				Enemy[i].SetPositionY(y + k * f);
 			}
 		}
 	}
@@ -614,32 +740,32 @@ void MoveEnemy()
 
 void Judge()//服务端专用,需要判断玩家之间,玩家和AI
 {
-	int PlayerX = Player.getPositionX();
-	int PlayerY = Player.getPositionY();
-	double PlayerR = Player.getRadius();
+	int PlayerX = Player.GetPositionX();
+	int PlayerY = Player.GetPositionY();
+	double PlayerR = Player.GetRadius();
 	//玩家和食物
 	const int K1 = 30;//控制玩家体积增长
 	for (int i = 0; i < foodnum; i++)
 	{
 		double dis = sqrt((food[i].x - PlayerX) * (food[i].x - PlayerX) +
 			(food[i].y - PlayerY) * (food[i].y - PlayerY));//确保不会爆int
-		double r = Player.getRadius();
+		double r = Player.GetRadius();
 		if (dis <= r + 1)
 		{
 			food[i].state = false;
 			double NewVolumn = Pi * r * r + K1;
 			double NewRadius = sqrt(NewVolumn / Pi);
-			Player.setRadius(NewRadius);
+			Player.SetRadius(NewRadius);
 		}
 	}
 
 	//敌人和食物
 	const int K2 = 1;//控制敌人体积增长
-	for (int i = 0; i < enemynum; i++)
+	for (int i = 0; i < EnemyNum; i++)
 	{
-		int x = Enemies[i].getPositionX();
-		int y = Enemies[i].getPositionY();
-		double r = Enemies[i].getRadius();
+		int x = Enemy[i].GetPositionX();
+		int y = Enemy[i].GetPositionY();
+		double r = Enemy[i].GetRadius();
 		for (int j = 0; j < foodnum; j++)
 		{
 			double dis = sqrt((food[j].x - x) * (food[j].x - x) + (food[j].y - y) * (food[j].y - y));//确保不会爆int
@@ -648,25 +774,25 @@ void Judge()//服务端专用,需要判断玩家之间,玩家和AI
 				food[i].state = false;
 				double NewVolumn = Pi * r * r + K2;
 				double NewRadius = sqrt(NewVolumn / Pi);
-				Enemies[i].setRadius(NewRadius);
+				Enemy[i].SetRadius(NewRadius);
 			}
 		}
 
 	}
 
 	//玩家和敌人
-	for (int i = 0; i < enemynum; i++)
+	for (int i = 0; i < EnemyNum; i++)
 	{
-		if (Enemies[i].getaliveState() == false)
+		if (Enemy[i].GetAliveState() == false)
 		{
 			continue;
 		}
-		int x = Enemies[i].getPositionX();
-		int y = Enemies[i].getPositionY();
-		double r = Enemies[i].getRadius();
-		int PlayerX = Player.getPositionX();
-		int PlayerY = Player.getPositionY();
-		double PlayerR = Player.getRadius();
+		int x = Enemy[i].GetPositionX();
+		int y = Enemy[i].GetPositionY();
+		double r = Enemy[i].GetRadius();
+		int PlayerX = Player.GetPositionX();
+		int PlayerY = Player.GetPositionY();
+		double PlayerR = Player.GetRadius();
 		double dis = sqrt((x - PlayerX) * (x - PlayerX) + (y - PlayerY) * (y - PlayerY));//确定不会爆int
 		if (dis <= r + PlayerR)
 		{
@@ -678,43 +804,43 @@ void Judge()//服务端专用,需要判断玩家之间,玩家和AI
 			}
 			else
 			{
-				Enemies[i].setaliveState(false);
+				Enemy[i].SetAliveState(false);
 				double NewVolumn = Pi * (r * r + PlayerR * PlayerR);
 				double NewRadius = sqrt(NewVolumn / Pi);
-				Player.setRadius(NewRadius);
+				Player.SetRadius(NewRadius);
 			}
 		}
 	}
 
 	// 敌人和敌人
-	for (int i = 0; i < enemynum; i++)
+	for (int i = 0; i < EnemyNum; i++)
 	{
-		for (int j = 0; j < enemynum; j++)
+		for (int j = 0; j < EnemyNum; j++)
 		{
-			if (i != j && Enemies[i].getaliveState() == true && Enemies[j].getaliveState() == true)
+			if (i != j && Enemy[i].GetAliveState() == true && Enemy[j].GetAliveState() == true)
 			{
-				int x1 = Enemies[i].getPositionX();
-				int y1 = Enemies[i].getPositionY();
-				double r1 = Enemies[i].getRadius();
-				int x2 = Enemies[j].getPositionX();
-				int y2 = Enemies[j].getPositionY();
-				double r2 = Enemies[j].getRadius();
+				int x1 = Enemy[i].GetPositionX();
+				int y1 = Enemy[i].GetPositionY();
+				double r1 = Enemy[i].GetRadius();
+				int x2 = Enemy[j].GetPositionX();
+				int y2 = Enemy[j].GetPositionY();
+				double r2 = Enemy[j].GetRadius();
 				double dis = sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));//确定不会爆int
 				if (dis <= r1 + r2)
 				{
 					if (r1 >= r2)
 					{
-						Enemies[j].setaliveState(false);
+						Enemy[j].SetAliveState(false);
 						double NewVolumn = Pi * (r1 * r1 + r2 * r2);
 						double NewRadius = sqrt(NewVolumn / Pi);
-						Enemies[i].setRadius(NewRadius);
+						Enemy[i].SetRadius(NewRadius);
 					}
 					else
 					{
-						Enemies[i].setaliveState(false);
+						Enemy[i].SetAliveState(false);
 						double NewVolumn = Pi * (r1 * r1 + r2 * r2);
 						double NewRadius = sqrt(NewVolumn / Pi);
-						Enemies[j].setRadius(NewRadius);
+						Enemy[j].SetRadius(NewRadius);
 					}
 				}
 			}
