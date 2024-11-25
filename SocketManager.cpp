@@ -38,7 +38,7 @@ void SocketManager::Test()//Server send to Server Fail!!!!!!!!!!!!!!!!!!
 	Json::Value msg = CreateMsg();
 	std::string str_msg = msg.toStyledString();
 	int size = send(ServerSocket, str_msg.c_str(), str_msg.length(), 0);
-	std::cout << "服务端向" << ServerSocket << "发送数据" << str_msg.c_str() << "\n";
+	//std::cout << "服务端向" << ServerSocket << "发送数据" << str_msg.c_str() << "\n";
 	if (size <= 0)
 	{
 		if (GetLastError() == WSAEWOULDBLOCK)
@@ -49,7 +49,7 @@ void SocketManager::Test()//Server send to Server Fail!!!!!!!!!!!!!!!!!!
 		{
 			std::cout << ServerSocket << " is closed" << "\n";
 		}
-		Error = 1;
+		error = 1;
 		return;
 	}
 	ServerRecMsg(ServerSocket);
@@ -88,10 +88,13 @@ bool SocketManager::StartServer()
 	int addr_len = sizeof(struct sockaddr_in);
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(SERVER_PORT);
-	inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);//绑定本机的环回地址
+	addr.sin_addr.s_addr = INADDR_ANY;
+//	inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);//绑定本机的环回地址
+
 	if (SOCKET_ERROR == bind(ServerSocket, (SOCKADDR*)&addr, sizeof(sockaddr_in)))
 	{
-		std::cout << "地址绑定失败！错误代码：" << WSAGetLastError() << "\n";
+		//第二次StartServer后就会地址绑定失败
+		//std::cout << "地址绑定失败！错误代码：" << WSAGetLastError() << "\n";
 		closesocket(ServerSocket);//modify
 		return false;
 	}
@@ -110,13 +113,12 @@ bool SocketManager::ServerAcceptClient()
 {
 	sockaddr_in  client_addr;
 	int addr_len = sizeof(client_addr);
-	auto sc = accept(ServerSocket, (struct sockaddr*)&client_addr, &addr_len);
-	if (sc == INVALID_SOCKET)
+	auto ClientSocket = accept(ServerSocket, (struct sockaddr*)&client_addr, &addr_len);
+	if (ClientSocket == INVALID_SOCKET)
 	{
 		if (GetLastError() == WSAEWOULDBLOCK)
 		{
 			//std::cout << "本次 accept函数没有客户端建立连接！" << "\n";
-			Sleep(200);//设置令其间隔一段时间
 		}
 		else
 		{
@@ -128,47 +130,47 @@ bool SocketManager::ServerAcceptClient()
 	else
 	{
 		std::cout << "服务器成功和第:" << (int)ClientSockets.size() + 1 << "个客户端建立连接！" << "\n";
-		ClientSockets.push_back(sc);//将建立连接的套接字压入list
+		ClientSockets.push_back(ClientSocket);
 		return true;
 	}
 }
-void  SocketManager::ServerSendMsg(SOCKET Client, Json::Value msg)
+bool  SocketManager::ServerSendMsg(SOCKET Client, Json::Value msg)
 {
 	//发送的消息出现问题 ****烫烫烫(Msg缓冲区超出Client缓冲区大小)
+	if (msg["type"] == 2)
+	{
+		std::cout << msg << "\n";
+	}
 	std::string str_msg = msg.toStyledString();
 	int size = send(Client, str_msg.c_str(), str_msg.length(), 0);
-	std::cout << "服务端向" << Client << "发送数据" << str_msg.c_str() << "\n";
+	//std::cout << "服务端向" << Client << "发送数据" << msg["type"] << "\n";
 	if (size <= 0)
 	{
 		if (GetLastError() == WSAEWOULDBLOCK)
 		{
-			std::cout << "Send data failure！\n";
+			 
+			std::cout << "Server Send data failure as follow！\n";
+			std::cout << msg["type"] << "\n";//Info fail
 		}
 		else
 		{
 			std::cout << Client << " is closed" << "\n";
+			
 		}
-		Error = 1;
-		return;
+		error = 1;
+		return 0;
 	}
-	return;
+	return 1;
 }
 Json::Value SocketManager::ServerRecMsg(SOCKET Client)
 {
 	int size = recv(Client, RecMsgBuffer, sizeof(RecMsgBuffer), 0);
-	if (size <= 0)
+	//size==-1可能是非阻塞模式下没有收到数据
+	if (size == 0)
 	{
-		if (GetLastError() == WSAEWOULDBLOCK)
-		{
-			std::cout << "recv data failure！\n";
-		}
-		else
-		{
-			std::cout << Client << " is closed" << "\n";
-		}
-		return Json::nullValue;
+		std::cout << "Server closed\n";
 	}
-	else
+	if (size >0)
 	{
 		std::cout << Client << "说：" << RecMsgBuffer << "\n";
 	}
@@ -190,7 +192,7 @@ void SocketManager::ServerRecClientsMsg()
 	{
 		//先收到客户端的消息再发送指令
 		Json::Value msg = ServerRecMsg(*it);
-		if (Error == 0)
+		if (error == 0)
 		{
 			it++;
 		}
@@ -202,10 +204,16 @@ void SocketManager::ServerRecClientsMsg()
 }
 std::vector<SOCKET> SocketManager::GetClientSockets()
 {
+	if (!ClientSockets.size())
+	{
+		std::cout << "get a empty ClientSocket!!! \n";
+	}
 	return ClientSockets;
 }
 void SocketManager::StartClient()
 {
+	//目前来看connect失败
+ 
 	// 创建客户端套接字
 	ClientSocket = socket(AF_INET, SOCK_STREAM, 0);
 	if (ClientSocket == INVALID_SOCKET) {
@@ -235,15 +243,17 @@ void SocketManager::StartClient()
 		int errorCode = WSAGetLastError();
 		if (errorCode != WSAEWOULDBLOCK) {
 			printf("Connect failed with error code : %d\n", errorCode);
+			//10061可能原因:端口不一致；没有开启服务端
 			return;
 		}
 	}
-
+	std::cout << "StartClient success\n";
 }
 
 Json::Value SocketManager::ClientRecMsg()
 {
 	int state = recv(ClientSocket, RecMsgBuffer, sizeof(RecMsgBuffer), 0);
+	//std::cout << RecMsgBuffer << "\n";
 	if (state == 0)
 	{
 		std::cout << "服务端已关闭连接\n";
@@ -251,12 +261,13 @@ Json::Value SocketManager::ClientRecMsg()
 	}
 	else if (state != SOCKET_ERROR)
 	{
-		std::cout << "Clien" << ClientSocket << " received " << RecMsgBuffer << "\n";
+		 
 		Json::Value val;
 		Json::Reader reader;
 		bool parsingSuccessful = reader.parse(RecMsgBuffer, val);
 		if (parsingSuccessful)
 		{
+			//std::cout << "Clien" << ClientSocket << " received " << val["type"] << "\n";
 			return val;
 		}
 	}
@@ -264,17 +275,20 @@ Json::Value SocketManager::ClientRecMsg()
 }
 void SocketManager::ClientSendMsg(Json::Value msg)
 {
-	std::cout << "sending\n";
-	std::string str_msg = msg.toStyledString();
 	 
+	std::string str_msg = msg.toStyledString();
 	int size = send(ClientSocket, str_msg.c_str(), str_msg.length(), 0);
-	std::cout << "finist sending\n";
+	//std::cout << "Client send " << str_msg.length() << "\n";
 	if (size == SOCKET_ERROR)
 	{
 		std::cout << "发送信息失败" << WSAGetLastError() << "\n";
 	}
 	else
 	{
-		std::cout << "Client" << ClientSocket << " sent " << str_msg << "\n";
+		std::cout << "Client" << ClientSocket << " sent " << msg["type"] << "\n";
 	}
+}
+SOCKET SocketManager::GetClientSocket()
+{
+	return ClientSocket;
 }
