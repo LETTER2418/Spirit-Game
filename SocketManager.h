@@ -35,11 +35,13 @@ public:
 private:
 	WSADATA wsaData;
 	SOCKET ServerSocket, ClientSocket;
-	static const int  SERVER_PORT = 8888;
-	static const int  RecBufferSize = 5E7;//需要合适,否则溢出会"烫烫烫”
-	static const int  SendBufferSize = 5E7;//
+	static const int  SERVER_PORT = 6666;
+	static const int  RecBufferSize = 5E5;//需要合适,否则溢出会"烫烫烫”
+	static const int  SendBufferSize = 5E5;
 	bool error = 0;
 	char RecMsgBuffer[RecBufferSize];
 	char SendMsgBuffer[SendBufferSize];
 	std::vector<SOCKET>ClientSockets;//存储连接的套接字 
+	fd_set readfds, writefds, exceptfds;
+	timeval timeout;
 };
