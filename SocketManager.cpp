@@ -6,6 +6,7 @@ SocketManager::SocketManager()
 	if (result != 0) {
 		std::cout << "WSAStartup Fail\n";
 	}
+
 }
 SocketManager::~SocketManager()
 {
@@ -25,7 +26,7 @@ void SocketManager::ServerTest()
 	Json::Value msg = CreateMsg();
 	for (auto Client : ClientSockets)
 	{
-		ServerSendMsg(Client,msg);
+		ServerSendMsg(Client, msg);
 	}
 }
 void SocketManager::ClientTest()
@@ -75,6 +76,23 @@ bool SocketManager::StartServer()
 		return false;
 	}
 
+	//设置缓冲区大小
+	if (setsockopt(ServerSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&SendBufferSize, sizeof(SendBufferSize)) < 0) {
+		std::cout << "Error setting send buffer size\n";
+	}
+	if (setsockopt(ServerSocket, SOL_SOCKET, SO_RCVBUF, (const char*)&RecBufferSize, sizeof(RecBufferSize)) < 0) {
+		std::cout << "Error setting receive buffer size\n";
+	}
+
+	//检查实际设置的缓冲区大小
+	int actual_send_buf_size, actual_recv_buf_size;
+	socklen_t optlen = sizeof(actual_send_buf_size);
+	getsockopt(ServerSocket, SOL_SOCKET, SO_SNDBUF, (char*)&actual_send_buf_size, &optlen);
+	std::cout << "Server actual send buffer size: " << actual_send_buf_size << " bytes" << "\n";
+
+	getsockopt(ServerSocket, SOL_SOCKET, SO_RCVBUF, (char*)&actual_recv_buf_size, &optlen);
+	std::cout << "Server actual receive buffer size: " << actual_recv_buf_size << " bytes" << "\n";
+
 	//设置为非阻塞方式
 	u_long mode = 1;
 	if (ioctlsocket(ServerSocket, FIONBIO, &mode) == SOCKET_ERROR)
@@ -89,7 +107,7 @@ bool SocketManager::StartServer()
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(SERVER_PORT);
 	addr.sin_addr.s_addr = INADDR_ANY;
-//	inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);//绑定本机的环回地址
+	//	inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);//绑定本机的环回地址
 
 	if (SOCKET_ERROR == bind(ServerSocket, (SOCKADDR*)&addr, sizeof(sockaddr_in)))
 	{
@@ -100,7 +118,8 @@ bool SocketManager::StartServer()
 	}
 
 	//将套接字设为监听状态
-	int size = listen(ServerSocket, 0);
+	int size = listen(ServerSocket, 3);//第二个参数指定等待连接队列的最大长度
+	std::cout << "server start listening\n";
 	if (size != 0)
 	{
 		std::cout << "listen函数调用失败！\n";
@@ -111,6 +130,26 @@ bool SocketManager::StartServer()
 }
 bool SocketManager::ServerAcceptClient()
 {
+	//初始化为空集
+	FD_ZERO(&readfds);
+	FD_ZERO(&writefds);
+	FD_ZERO(&exceptfds);
+
+	//添加一个新的文件描述符
+	FD_SET(ServerSocket, &readfds);
+	FD_SET(ServerSocket, &writefds);
+	FD_SET(ServerSocket, &exceptfds);
+
+	//select函数的阻塞性依赖于是非阻塞还是阻塞套接字, 通常设置非阻塞
+	//使用select函数检查客户端SOCKET的可读性,否则GetLastError() == WSAEWOULDBLOCK GG
+	//select函数可以实现I/O多路复用
+	select(0, &readfds, &writefds, nullptr, &timeout);
+
+	if (!FD_ISSET(ServerSocket, &readfds))//返回1当有新的连接请求到达或已连接的客户端向服务端发送数据
+	{
+		return 0;
+	}
+	std::cout << "server accept success\n";
 	sockaddr_in  client_addr;
 	int addr_len = sizeof(client_addr);
 	auto ClientSocket = accept(ServerSocket, (struct sockaddr*)&client_addr, &addr_len);
@@ -118,45 +157,43 @@ bool SocketManager::ServerAcceptClient()
 	{
 		if (GetLastError() == WSAEWOULDBLOCK)
 		{
-			//std::cout << "本次 accept函数没有客户端建立连接！" << "\n";
+			std::cout << "Server accept error！" << "\n";
 		}
 		else
 		{
 			std::cout << "accept函数调用失败！网络异常程序退出" << "\n";
 			closesocket(ServerSocket);
 		}
-		return false;
+		return 0;
 	}
 	else
 	{
-		std::cout << "服务器成功和第:" << (int)ClientSockets.size() + 1 << "个客户端建立连接！" << "\n";
+		std::cout << "服务器成功和第" << (int)ClientSockets.size() + 1 << "个客户端建立连接！" << "\n";
 		ClientSockets.push_back(ClientSocket);
-		return true;
+		return 1;
 	}
 }
 bool  SocketManager::ServerSendMsg(SOCKET Client, Json::Value msg)
 {
+	//待优化,可以设置一个消息池,使用select函数检查消息池的客户端的可读/写性
+
+	 //牢记:select用于ServerSocket时只能用于判断是否有连接请求,不能用于判断服务端是否能数据读写
 	//发送的消息出现问题 ****烫烫烫(Msg缓冲区超出Client缓冲区大小)
-	if (msg["type"] == 2)
+	if (msg.isObject() && msg["type"] == 2)//Json有多种数据类型,只有对象才能使用[""]访问成员!!!否则程序会直接退出
 	{
-		std::cout << msg << "\n";
+		//std::cout << msg << "\n";
 	}
 	std::string str_msg = msg.toStyledString();
-	int size = send(Client, str_msg.c_str(), str_msg.length(), 0);
-	//std::cout << "服务端向" << Client << "发送数据" << msg["type"] << "\n";
+	int size = send(Client, str_msg.c_str(), SendBufferSize, 0);
+	/*char msg1[SendBufferSize] = "LETTER";
+	int size = send(Client, msg1, SendBufferSize, 0);
+	Sleep(1000);
+	static int cnt = 0;
+	std::cout << cnt++ << "\n";*/
 	if (size <= 0)
 	{
-		if (GetLastError() == WSAEWOULDBLOCK)
-		{
-			 
-			std::cout << "Server Send data failure as follow！\n";
-			std::cout << msg["type"] << "\n";//Info fail
-		}
-		else
-		{
-			std::cout << Client << " is closed" << "\n";
-			
-		}
+		//现在发送失败，试一下是不是json的问题
+		std::cout << "ServerSendMsg error" << GetLastError() << "\n";
 		error = 1;
 		return 0;
 	}
@@ -164,15 +201,31 @@ bool  SocketManager::ServerSendMsg(SOCKET Client, Json::Value msg)
 }
 Json::Value SocketManager::ServerRecMsg(SOCKET Client)
 {
+	//初始化为空集
+	FD_ZERO(&readfds);
+	FD_ZERO(&writefds);
+	FD_ZERO(&exceptfds);
+
+	//添加一个新的文件描述符
+	FD_SET(ServerSocket, &readfds);
+	FD_SET(ServerSocket, &writefds);
+	FD_SET(ServerSocket, &exceptfds);
+
+	select(0, &readfds, &writefds, nullptr, &timeout);
+
+	if (!FD_ISSET(ServerSocket, &readfds))
+	{
+		return Json::nullValue;
+	}
 	int size = recv(Client, RecMsgBuffer, sizeof(RecMsgBuffer), 0);
 	//size==-1可能是非阻塞模式下没有收到数据
 	if (size == 0)
 	{
 		std::cout << "Server closed\n";
 	}
-	if (size >0)
+	if (size > 0)
 	{
-		std::cout << Client << "说：" << RecMsgBuffer << "\n";
+		//std::cout << Client << "说：" << RecMsgBuffer << "\n";
 	}
 	Json::Value val;
 	Json::Reader reader;
@@ -213,13 +266,27 @@ std::vector<SOCKET> SocketManager::GetClientSockets()
 void SocketManager::StartClient()
 {
 	//目前来看connect失败
- 
+
 	// 创建客户端套接字
 	ClientSocket = socket(AF_INET, SOCK_STREAM, 0);
 	if (ClientSocket == INVALID_SOCKET) {
 		std::cout << "Client创建套接字失败！错误代码：" << WSAGetLastError() << "\n";
 		return;
 	}
+	if (setsockopt(ClientSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&SendBufferSize, sizeof(SendBufferSize)) < 0) {
+		std::cout << "Error setting send buffer size\n";
+	}
+	if (setsockopt(ClientSocket, SOL_SOCKET, SO_RCVBUF, (const char*)&RecBufferSize, sizeof(RecBufferSize)) < 0) {
+		std::cout << "Error setting receive buffer size\n";
+	}
+	//检查实际设置的缓冲区大小
+	int actual_send_buf_size, actual_recv_buf_size;
+	socklen_t optlen = sizeof(actual_send_buf_size);
+	getsockopt(ClientSocket, SOL_SOCKET, SO_SNDBUF, (char*)&actual_send_buf_size, &optlen);
+	std::cout << "Client actual send buffer size: " << actual_send_buf_size << " bytes\n";
+
+	getsockopt(ClientSocket, SOL_SOCKET, SO_RCVBUF, (char*)&actual_recv_buf_size, &optlen);
+	std::cout << "Client actual receive buffer size: " << actual_recv_buf_size << " bytes\n";
 
 	/* 客户端好像没必要设置非阻塞,而且非阻塞会bind失败
 	 设置客户端套接字为非阻塞模式
@@ -252,8 +319,16 @@ void SocketManager::StartClient()
 
 Json::Value SocketManager::ClientRecMsg()
 {
-	int state = recv(ClientSocket, RecMsgBuffer, sizeof(RecMsgBuffer), 0);
-	//std::cout << RecMsgBuffer << "\n";
+	//std::cout << " ClientRecMsg begin and recv function begin\n";
+	//int state = recv(ClientSocket, RecMsgBuffer, sizeof(RecMsgBuffer), 0);
+	memset(RecMsgBuffer, '\0', sizeof(RecMsgBuffer));
+	int state = recv(ClientSocket, RecMsgBuffer, 30, 0);
+	Json::Value val;
+	Json::Reader reader;
+	bool parsingSuccessful = reader.parse(RecMsgBuffer, val);
+	//std::cout << " recv function end\n";
+	std::cout << "Client rec " << val << " " << RecMsgBuffer <<" "<< parsingSuccessful << "\n";
+	Sleep(2000);
 	if (state == 0)
 	{
 		std::cout << "服务端已关闭连接\n";
@@ -261,13 +336,13 @@ Json::Value SocketManager::ClientRecMsg()
 	}
 	else if (state != SOCKET_ERROR)
 	{
-		 
 		Json::Value val;
 		Json::Reader reader;
 		bool parsingSuccessful = reader.parse(RecMsgBuffer, val);
 		if (parsingSuccessful)
 		{
 			//std::cout << "Clien" << ClientSocket << " received " << val["type"] << "\n";
+			//std::cout << " ClientRecMsg end\n";
 			return val;
 		}
 	}
@@ -275,7 +350,11 @@ Json::Value SocketManager::ClientRecMsg()
 }
 void SocketManager::ClientSendMsg(Json::Value msg)
 {
-	 
+	/*char msg1[]="hi";
+	send(ClientSocket, msg1, 2, 0);
+	static int cnt = 0;
+	std::cout <<client<<"send "<< ++cnt << "th msg\n";
+	return;*/
 	std::string str_msg = msg.toStyledString();
 	int size = send(ClientSocket, str_msg.c_str(), str_msg.length(), 0);
 	//std::cout << "Client send " << str_msg.length() << "\n";
@@ -285,7 +364,14 @@ void SocketManager::ClientSendMsg(Json::Value msg)
 	}
 	else
 	{
-		std::cout << "Client" << ClientSocket << " sent " << msg["type"] << "\n";
+		if (msg.isObject())
+		{
+			std::cout << "Client" << ClientSocket << " sent " << msg["type"] << "\n";
+		}
+		else
+		{
+			std::cout << "Client" << ClientSocket << " sent " << msg << "\n";
+		}
 	}
 }
 SOCKET SocketManager::GetClientSocket()
