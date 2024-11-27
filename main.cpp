@@ -333,19 +333,14 @@ void SelectedTask()
 	}
 	else
 	{
-		 
 		initgraph(width, height);//初始化绘图窗口 
 		SetCursor();
 		//Start();//设置开始界面
 		BeginBatchDraw();//批量绘图,消除闪烁问题
 		socketManager.StartClient();
 	}
-	/*while (1)
-	{
-		Test();
-	}*/
 	//要先等到服务端的"Init"和"Info"命令初始化
-	std::cout << "client start process\n";
+	std::cout << "Client start process msg\n";
 	do {
 
 	} while (!ClientProcessMsg());
@@ -358,8 +353,8 @@ void SelectedTask()
 	}*/
 	while (1)
 	{	 
-		std::cout << 1;
-		ClientProcessMsg();//可能是这个函数的问题导致退出
+		//std::cout << 1;
+		ClientProcessMsg();
 		//std::cout << 2;
 		Draw();//画出玩家,食物,敌人
 		//std::cout << 3;
@@ -435,7 +430,8 @@ void AssignAddress()
 	msg["r"] = PlayerR;
 	msg["color"] = (int)color;
 	msg["id"] =(int) Players.size() - 1;
-	socketManager.ServerSendMsg(ClientSocket, msg);
+	socketManager.ServerAddSendMsgList(ClientSocket, msg);
+	std::cout << "Server finish assigning address\n";
 }
 Json::Value FoodToJson()
 {
@@ -473,11 +469,7 @@ void ServerSendInfo()
 		if (Players[i].GetAliveState())
 		{
 			int ClientSocket = Players[i].GetSocket();
-			if (!socketManager.ServerSendMsg(ClientSocket, msg))
-			{
-				std::cout <<i<<"th "<<"Player death\n";
-				Players[i].SetAliveState(0);
-			}
+			socketManager.ServerAddSendMsgList(ClientSocket, msg);
 		}
 	}
 }
@@ -493,12 +485,12 @@ void ServerProcessMsg()
 			double r = Players[i].GetRadius();
 			Json::Value msg;
 			int ClientSocket = Players[i].GetSocket();
-			msg = socketManager.ServerRecMsg(ClientSocket);
+			msg = socketManager.ServerRecvMsg(ClientSocket);
 			static int cnt = 0;
 			if(!msg.isNull())
 			{
-				static int cnt = 0;
-				std::cout << ++cnt << " th " << msg<<"\n";
+				/*static int cnt = 0;
+				std::cout << ++cnt << " th " << msg<<"\n";*/
 			}
 			if (!msg.isObject())
 			{
@@ -507,7 +499,7 @@ void ServerProcessMsg()
 			if (msg["type"] == "Control")
 			{
 				std::string direction = msg["direction"].asString();
-				std::cout << ++cnt << "th "<<direction<<" Control\n";
+				//std::cout << ++cnt << "th "<<direction<<" Control\n";
 				if (direction == "W" && y - r >= 5) {
 					Players[i].SetPositionY(y - 5);
 					y = Players[i].GetPositionY();
@@ -536,16 +528,20 @@ void ServerProcessMsg()
 bool ClientProcessMsg()
 {
 	static int f1 = 0, f2 = 0;
-	Json::Value msg = socketManager.ClientRecMsg();
+	Json::Value msg = socketManager.ClientRecvMsg();
 
 	if (msg == Json::nullValue)
 	{
 		return false;
 	}
-
+	if (!f2)
+	{
+		//std::cout << msg << " CCC\n";
+	}
 	if (msg["type"].asString() == "Self")//求掉asString似乎效果一样
 	{
 		f1 = 1;
+		 
 		Player.SetPositionX(msg["x"].asInt());
 		Player.SetPositionY(msg["y"].asInt());
 		Player.SetRadius(msg["r"].asDouble());
@@ -557,6 +553,7 @@ bool ClientProcessMsg()
 	else if (msg["type"].asString() == "Info")
 	{
 		f2 = 1;
+
 		for (int i = 0; i < foodnum; i++)
 		{
 			food[i].type = msg["food"][i]["type"].asInt();
@@ -607,12 +604,13 @@ void ServerWork()
 	Init();//初始化食物和enemy
 	while (1)
 	{
-		//std::cout << 1;
+		//Sleep(100);
 		if (socketManager.ServerAcceptClient())
 		{
 			AssignAddress();//分配地址
 		}
 		ServerSendInfo();
+		socketManager.ServerProcessSendMsgList();
 		ServerProcessMsg();
 		CreateFood();
 		MoveEnemy();
@@ -743,7 +741,7 @@ void MovePlayer()
 	int x = Player.GetPositionX();
 	int y = Player.GetPositionY();
 	double r = Player.GetRadius();
-	Json::Value SendMsg, RecMsg;
+	Json::Value SendMsg, RecvMsg;
 	SendMsg["type"] = "Control";
 	if (GetAsyncKeyState('W'))
 	{
@@ -765,6 +763,7 @@ void MovePlayer()
 	if (!SendMsg["direction"].isNull())
 	{
 		std::cout << ++cnt << "th " << SendMsg["direction"] << " control\n";
+
 		socketManager.ClientSendMsg(SendMsg);
 	}
 	 
