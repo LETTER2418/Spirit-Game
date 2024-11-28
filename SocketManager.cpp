@@ -19,9 +19,14 @@ SocketManager::~SocketManager()
 	{
 		closesocket(ServerSocket);
 	}
+	for (auto Client : ClientSockets)
+	{
+		if (Client != INVALID_SOCKET)
+		{
+			closesocket(Client);
+		}
+	}
 	WSACleanup();
-	delete[]SendMsgBuffer;
-	delete[]RecvMsgBuffer;
 }
 void SocketManager::ServerTest()
 {
@@ -99,18 +104,14 @@ bool SocketManager::ServerAcceptClient()
 {
 	//初始化为空集
 	FD_ZERO(&readfds);
-	FD_ZERO(&writefds);
-	FD_ZERO(&exceptfds);
 
 	//添加一个新的文件描述符
 	FD_SET(ServerSocket, &readfds);
-	FD_SET(ServerSocket, &writefds);
-	FD_SET(ServerSocket, &exceptfds);
 
 	//select函数的阻塞性依赖于是非阻塞还是阻塞套接字, 通常设置非阻塞
 	//使用select函数检查客户端SOCKET的可读性,否则WSAGetLastError() == WSAEWOULDBLOCK GG
 	//select函数可以实现I/O多路复用
-	select(0, &readfds, &writefds, nullptr, &timeout);
+	select(0, &readfds, nullptr, nullptr, &timeout);
 
 	if (!FD_ISSET(ServerSocket, &readfds))//返回1当有新的连接请求到达或已连接的客户端向服务端发送数据
 	{
@@ -142,6 +143,7 @@ bool SocketManager::ServerAcceptClient()
 }
 void SocketManager::ServerAddSendMsgList(SOCKET Client, Json::Value msg)
 {
+
 	ServerSendMsgList[Client].push(msg);
 }
 bool  SocketManager::ServerSendMsg(SOCKET Client, Json::Value msg)
@@ -158,17 +160,22 @@ bool  SocketManager::ServerSendMsg(SOCKET Client, Json::Value msg)
 	str_tmp += "#";//结束符号
 	if (str_tmp.length() > RecvBufferSize)
 	{
-		std::cout << "str_msg.length() > RecvBufferSize\n";
-		exit(2341);
+		std::cout << str_tmp.length() << "\n";
+		std::cout << "str_tmp.length() > RecvBufferSize\n";
+		exit(0);
 	}
+
+	/*std::thread t ([=]() {send(Client, str_tmp.c_str(), str_tmp.length(), 0); });
+	t.detach();
+	return 1;*/
 	int size = send(Client, str_tmp.c_str(), str_tmp.length(), 0);
 	//static int cnt = 0;
-	//std::cout << "Server is sending " << ++cnt << "th msg\n"<<str_tmp<<"\n";
+	//std::cout << "Server send " << ++cnt << "th msg\n"<<str_tmp<<"\n";
 	if (size <= 0)
 	{
 		std::cout << "ServerSendMsg error " << WSAGetLastError() << "\n";
 		error = 1;
-		exit(9929);
+		exit(0);
 		return 0;
 	}
 	else
@@ -179,48 +186,48 @@ bool  SocketManager::ServerSendMsg(SOCKET Client, Json::Value msg)
 }
 void SocketManager::ServerProcessSendMsgList()
 {
-	//初始化为空集
-	FD_ZERO(&readfds);
-	FD_ZERO(&writefds);
-	FD_ZERO(&exceptfds);
-
-	for (auto [Client, Msglist] : ServerSendMsgList)
-	{
-		//添加一个新的文件描述符
-		FD_SET(Client, &readfds);
-		FD_SET(Client, &writefds);
-		FD_SET(Client, &exceptfds);
-	}
-	select(0, &readfds, &writefds, nullptr, &timeout);
 	for (auto& [Client, MsgList] : ServerSendMsgList)
 	{
-		if (FD_ISSET(Client, &writefds) && !MsgList.empty())//注意是确认客户端的可写性
+		while (1)
 		{
+			FD_ZERO(&writefds);
+			FD_SET(Client, &writefds);
+			select(0, nullptr, &writefds, nullptr, &timeout);
+			std::cout << "SendMsgList size==" << MsgList.size() << "\n";
+			if (FD_ISSET(Client, &writefds))
+			{
+				std::cout << "可写\n";
+
+			}
+			else
+			{
+
+				std::cout << "不可写\n";
+			}
+			if (!FD_ISSET(Client, &writefds) || MsgList.empty())
+			{
+				break;
+			}
+
 			auto msg = MsgList.front();
+			static int x = 0;
+			if (!msg["cnt"].isNull() && x != msg["cnt"].asInt())
+			{
+				x = msg["cnt"].asInt();
+				std::cout << "Server send  " << msg["cnt"] << "th msg's response\n";
+			}
 			ServerSendMsg(Client, msg);
 			MsgList.pop();
 		}
-		else
-		{
-			//std::cout << Client << "不可写\n";
-		}
+
 	}
 }
 Json::Value SocketManager::ServerRecvMsg(SOCKET Client)
 {
 
-	//初始化为空集
 	FD_ZERO(&readfds);
-	FD_ZERO(&writefds);
-	FD_ZERO(&exceptfds);
-
-	//添加一个新的文件描述符
 	FD_SET(Client, &readfds);
-	FD_SET(Client, &writefds);
-	FD_SET(Client, &exceptfds);
-
-	select(0, &readfds, &writefds, nullptr, &timeout);
-
+	select(0, &readfds, nullptr, nullptr, &timeout);
 	if (!FD_ISSET(Client, &readfds))//!!! 对Client检查可读性，返回1表示该套接字上有数据可读
 	{
 		return Json::nullValue;
@@ -233,11 +240,7 @@ Json::Value SocketManager::ServerRecvMsg(SOCKET Client)
 		std::cout << "Client closed\n";
 		return Json::nullValue;
 	}
-	else if (size > 0)
-	{
-		//std::cout  << "Server recv \n" << RecvMsgBuffer << "\n"; 
-	}
-
+	//std::cout  << "Server recv \n" << RecvMsgBuffer << "\n"; 
 	Json::Value val = Json::nullValue;
 	str_tmp = std::string(RecvMsgBuffer);
 	if (str_tmp.find('#') == std::string::npos)
@@ -259,14 +262,14 @@ Json::Value SocketManager::ServerRecvMsg(SOCKET Client)
 	}
 	if (parsingSuccessful)
 	{
-		static int cnt = 0;
-		std::cout <<"server recv "<< ++cnt << "th msg\n";
-		std::cout << val<<"\n";
+		//static int cnt = 0;
+		//std::cout <<"server recv "<< ++cnt << "th msg\n";
+		//std::cout << val<<"\n";
 	}
 	else
 	{
 		std::cout << "server parse fail\n";
-		exit(934);
+		exit(0);
 	}
 	return val;
 }
@@ -336,26 +339,21 @@ void SocketManager::StartClient()
 
 Json::Value SocketManager::ClientRecvMsg()
 {
-	//std::cout << " ClientRecvMsg begin and recv function begin\n";
-	//初始化为空集
+
 	FD_ZERO(&readfds);
-	FD_ZERO(&writefds);
-	FD_ZERO(&exceptfds);
 
-	//添加一个新的文件描述符
 	FD_SET(ClientSocket, &readfds);
-	FD_SET(ClientSocket, &writefds);
-	FD_SET(ClientSocket, &exceptfds);
 
-	select(0, &readfds, &writefds, nullptr, &timeout);
+	select(0, &readfds, nullptr, nullptr, &timeout);
 
 	if (!FD_ISSET(ClientSocket, &readfds))
 	{
 		return Json::nullValue;
 	}
-	//std::cout << "可读\n";
+
 	memset(RecvMsgBuffer, '\0', sizeof(RecvMsgBuffer));
-	//等到find #就把str_msg的信息转成Json返回并清空str_msg
+
+	//find #就把str_msg的信息转成Json返回并清空str_msg
 	Json::Value val = Json::nullValue;
 	int state = recv(ClientSocket, RecvMsgBuffer, sizeof(RecvMsgBuffer), 0);
 	str_tmp = std::string(RecvMsgBuffer);
@@ -387,24 +385,21 @@ Json::Value SocketManager::ClientRecvMsg()
 		}
 		if (parsingSuccessful)
 		{
-			 static int cnt = 0;
-			 if (cnt++ == 0)
-			 {
-				 std::cout << val << "\n";
-			 }
-			 /*std::cout << cnt++ << " msg\n";
-			std::cout <<  val <<"  \n";*/
+			// static int cnt = 0;
+			// std::cout <<"client recv"<< cnt++ << "th msg\n";
+			//std::cout <<  val <<"  \n";
 		}
 		else
 		{
-			std::cout << "parse fail\n";
-			exit(113);
+			std::cout << "clientrecvmsg parse error\n " << client_str_msg << "\n";
+			exit(0);
 		}
 
 	}
 	else
 	{
-		exit(2344);
+		std::cout << "ClientRecvMsg error "<<WSAGetLastError()<<"\n";
+		exit(0);
 	}
 
 	return val;
@@ -413,17 +408,53 @@ void SocketManager::ClientSendMsg(Json::Value msg)
 {
 	str_tmp = msg.toStyledString();
 	str_tmp += '#';
-	int size = send(ClientSocket, str_tmp.c_str(), RecvBufferSize, 0);
-	static int cnt = 0;
-	std::cout << "client send " << ++cnt << "th msg \n"<<str_tmp<<"\n";
+	if (str_tmp.length() > RecvBufferSize)
+	{
+		std::cout << "str_tmp.length() > RecvBufferSize\n";
+		exit(0);
+	}
+	const char* buffer = str_tmp.c_str();
+	if (buffer == nullptr) {
+		std::cout << "发送信息失败：缓冲区指针无效\n";
+		exit(0);
+	}
+	strcpy_s(tmp, str_tmp.c_str());
+	/*std::thread([&]() {send(ClientSocket, tmp, RecvBufferSize, 0); }).detach();
+	return;*/
+	int size = send(ClientSocket, tmp, RecvBufferSize, 0);
+	//static int cnt = 0;
+	//std::cout << "client send " << ++cnt << "th msg \n"<<str_tmp<<"\n";
 	if (size == SOCKET_ERROR)
 	{
-		std::cout << "发送信息失败" << WSAGetLastError() << "\n";
+		std::cout << "ClientSendMsg error" << WSAGetLastError() << "\n";
+		std::cout << msg << "\n";
+		exit(0);
 	}
 	else
 	{
-		
+
 	}
+}
+void SocketManager::ClientAddSendMsgList(Json::Value msg)
+{
+	ClientSendMsgList.push(msg);
+}
+void SocketManager::ClientProcessSendMsgList()
+{
+	while (1)
+	{
+		FD_ZERO(&writefds);
+		FD_SET(ClientSocket, &writefds);
+		select(ClientSocket, nullptr, &writefds, nullptr, &timeout);
+		if (!FD_ISSET(ClientSocket, &writefds) || ClientSendMsgList.empty())
+		{
+			break;
+		}
+		auto msg = ClientSendMsgList.front();
+		ClientSendMsg(msg);
+		ClientSendMsgList.pop();
+	}
+
 }
 SOCKET SocketManager::GetClientSocket()
 {
