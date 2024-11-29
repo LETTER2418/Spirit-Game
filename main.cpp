@@ -1,3 +1,4 @@
+#include "UI.h"
 #include "SocketManager.h"
 #include<windows.h>
 #include<graphics.h>
@@ -18,7 +19,7 @@ std::string GetRandomName()
 	std::string name;
 	for (int i = 0; i < 3; i++)
 	{
-		name += 'a' + (rand() % 26);
+		name += 'A' + (rand() % 26);
 	}
 	return name;
 }
@@ -31,7 +32,7 @@ class Spirit
 	static int number, AliveNumber;
 	double r = 1;//精灵半径
 	int deltax = 0, deltay = 0;//似乎可以删掉deltax和deltay,待删
-	int id = 666666;
+	int id = 0;
 	COLORREF color = UINT_MAX;//windows下32位无符号整数
 	SOCKET socket = INVALID_SOCKET;//windows下64位无符号整数
 public:
@@ -237,18 +238,20 @@ public:
 int Spirit::number = 0;
 int Spirit::AliveNumber = 0;
 
+void Start();
 void CompulsoryTask();
 void SelectedTask();
 void ServerWork();
-void Test();
 SocketManager socketManager;
 static int cnt = 0;
 
 int main()
 {
+	//MusicStart();//如果只有一台机器则只在服务端开启，防止重复
 	srand(time(0));
+	_getch();
 	//CompulsoryTask();
-	SelectedTask();
+	//SelectedTask();
 	return 0;
 }
 
@@ -303,10 +306,11 @@ void Judge();
 void SetCursor();
 bool ClientProcessMsg();
 void ServerProcessMsg();
+void UpdateCientsState();
 const int width = 800, height = 780;
 const int mapw = width * 4, maph = height * 4;
 const int foodnum = 2000;
-const int EnemyNum = 11;
+const int EnemyNum = 100;
 std::string UserName;
 struct FOOD {
 	int x, y, type;
@@ -316,14 +320,9 @@ struct FOOD {
 Spirit Player("LETTER", width / 2, height / 2, 10, RGB(0, 100, 97));
 std::vector<Spirit>Players;
 Spirit Enemy[EnemyNum];
-const int FPS = 120;
-
-void Test()
-{
-	//正常
-	char msg[] = "Hi from Client";
-	send(socketManager.GetClientSocket(), msg, sizeof(msg), 0);
-}
+const int FPS = 70;//单客户端时70很丝滑
+Json::Value msg;
+Json::Value EnemyJson, PlayersJson;
 
 void SelectedTask()
 {
@@ -332,51 +331,31 @@ void SelectedTask()
 	if (socketManager.StartServer())
 	{
 		/*FILE* file;
-		errno_t err = freopen_s(&file, "E:\\server_output.txt", "w", stdout);
-		if (err != 0) {
-			perror("Error opening file");
-			return ;
-		}*/
+		freopen_s(&file, "E:\\server_output.txt", "w", stdout);*/
 		ServerWork();
 	}
 	else
 	{
 		/*FILE* file;
-		errno_t err = freopen_s(&file, "E:\\client_output.txt", "w", stdout);
-		if (err != 0) {
-			perror("Error opening file");
-			return;
-		}*/
+		freopen_s(&file, "E:\\client_output.txt", "w", stdout);*/
 		initgraph(width, height);//初始化绘图窗口 
 		SetCursor();
-		//Start();//设置开始界面
+		Start();//设置开始界面
 		BeginBatchDraw();//批量绘图,消除闪烁问题
 		socketManager.StartClient();
 	}
 	//要先等到服务端的"Init"和"Info"命令初始化
 	std::cout << "Client start process msg\n";
-	do {
-
-	} while (!ClientProcessMsg());
-	//std::cout << Player.ToJson();
+	while (!ClientProcessMsg());
 	std::cout << "Client go into while\n";
-	/*while (1)
-	{
-		Json::Value val = "hi";
-		socketManager.ClientSendMsg(val);
-	}*/
 	while (1)
 	{
-		//std::cout << 1;
 		ClientProcessMsg();
-		//std::cout << 2;
 		Draw();//画出玩家,食物,敌人
-		//std::cout << 3;
 		MovePlayer();//玩家移动,需要加入服务端的判定  
 		socketManager.ClientProcessSendMsgList();
 		Delay(1000 / FPS);//锁帧
 		FlushBatchDraw();
-		//std::cout << 4;
 	}
 }
 
@@ -431,7 +410,6 @@ void AssignAddress()
 		PlayerY = rand() % (maph - 10) + 5;
 		PlayerR = rand() % 5 + 5;
 	}
-	//?Player的颜色和Client显示的颜色不相同
 	COLORREF color = RGB(rand() % 256, rand() % 256, rand() % 256);
 	//COLORREF color = RGB(165, 0, 255);
 	SOCKET ClientSocket = socketManager.GetClientSockets().back();
@@ -445,6 +423,11 @@ void AssignAddress()
 	msg["r"] = PlayerR;
 	msg["color"] = (int)color;
 	msg["id"] = (int)Players.size() - 1;
+	if (Players.size() == 1)
+	{
+		msg["name"] = "LETTER";
+		Players[0].SetName("LETTER");
+	}
 	socketManager.ServerAddSendMsgList(ClientSocket, msg);
 	std::cout << "Server finish assigning address\n";
 }
@@ -465,7 +448,12 @@ Json::Value FoodToJson()
 }
 void ServerSendInfo()
 {
-	Json::Value EnemyJson, PlayersJson;
+	static int f = 0;
+	f++;
+	if (f % 5 == 0)//减少信息发送量
+	{
+		return;
+	}
 	for (int i = 0; i < EnemyNum; i++)
 	{
 		EnemyJson[i] = Enemy[i].ToJson();
@@ -474,12 +462,13 @@ void ServerSendInfo()
 	{
 		PlayersJson[i] = Players[i].ToJson();
 	}
-	Json::Value msg;
+	msg = Json::nullValue;
 	msg["type"] = "Info";
 	msg["food"] = FoodToJson();
 	msg["Enemy"] = EnemyJson;
 	msg["Players"] = PlayersJson;//Json数组,元素是对象
 	msg["cnt"] = cnt;
+	//std::cout << msg["Players"] << "\n";
 	for (int i = 0; i < Players.size(); i++)
 	{
 		if (Players[i].GetAliveState())
@@ -491,31 +480,22 @@ void ServerSendInfo()
 }
 void ServerProcessMsg()
 {
-	//先改变所有Player的位置再去judge最后发送Info
-	static int f = 0, id = -1;
-	int i = 0;
-	if (f)
-	{
-		i = id;
-	}
-	for (; i < Players.size(); i++)
+	static int f = 0, id = 0, c = 0;
+	for (int i = id; i < Players.size(); i++)
 	{
 		if (Players[i].GetAliveState())
 		{
+			//std::cout << i << "th Plyaer\n";
 			int x = Players[i].GetPositionX();
 			int y = Players[i].GetPositionY();
 			double r = Players[i].GetRadius();
 			Json::Value msg;
 			int ClientSocket = Players[i].GetSocket();
 			msg = socketManager.ServerRecvMsg(ClientSocket);
-			if (!msg.isObject())
-			{
-				continue;
-			}
-			if (msg["type"] == "Control")
+			if (msg.isObject() && msg["type"] == "Control")
 			{
 				std::string direction = msg["direction"].asString();
-				std::cout << ++cnt << "th " << direction << " Control\n";
+				//std::cout << ++cnt << "th " << direction << " Control\n";
 				if (direction == "W" && y - r >= 5) {
 					Players[i].SetPositionY(y - 5);
 					y = Players[i].GetPositionY();
@@ -534,10 +514,14 @@ void ServerProcessMsg()
 					Players[i].SetPositionX(x + 5);
 					Players[i].AddDeltax(-5);
 				}
-				if (direction == "F")
+				if (direction == "F")//n个客户端会发n*_次'F'(因为不能保证按一次只get了一个'F')
 				{
 					f = 1;
-					id = (id + 1) % Players.size();
+					if (c % (Players.size() * 4) == 0)
+					{
+						id = (id + 1) % Players.size();
+					}
+					c++;
 				}
 			}
 		}
@@ -550,17 +534,36 @@ void ServerProcessMsg()
 bool ClientProcessMsg()
 {
 	static int f1 = 0, f2 = 0;
-	Json::Value msg = socketManager.ClientRecvMsg();
+	msg = socketManager.ClientRecvMsg();
 
 	if (msg == Json::nullValue)
 	{
 		return false;
 	}
-
+	else if (msg.isString() && msg.asString() == "big")
+	{
+		HWND hwnd = GetHWnd();
+		MessageBox(hwnd, _T("    You are too big"), _T("WIN"), MB_ICONWARNING);
+		closegraph();
+		std::cout << "You are 2 Big(WIN)\n";
+		exit(0);
+	}
+	else if (msg.isString() && msg.asString() == "eaten")
+	{
+		HWND hwnd = GetHWnd();
+		MessageBox(hwnd, _T("    You are eaten"), _T("LOSE"), MB_ICONWARNING);
+		closegraph();
+		std::cout << "You are eaten(LOSE)\n";
+		exit(0);
+	}
+	if (!msg.isObject())
+	{
+		std::cout << "ClientProcessMsg error";
+		exit(0);
+	}
 	if (msg["type"].asString() == "Self")//求掉asString似乎效果一样
 	{
 		f1 = 1;
-
 		Player.SetPositionX(msg["x"].asInt());
 		Player.SetPositionY(msg["y"].asInt());
 		Player.SetRadius(msg["r"].asDouble());
@@ -608,15 +611,9 @@ bool ClientProcessMsg()
 		Player.SetPositionX(Players[id].GetPositionX());
 		Player.SetPositionY(Players[id].GetPositionY());
 		Player.SetRadius(Players[id].GetRadius());
+		//std::cout << Players[id].GetPositionX() << " " << Players[id].GetPositionY() << "\n";
 		//setorigin的原理就是:你往右下走,旁边的东西相对你往左上走,所以origin就要往左上
 		setorigin(-Player.GetPositionX() + width / 2, -Player.GetPositionY() + height / 2);
-	}
-	else if (msg.asString() == "dead")
-	{
-		HWND hwnd = GetHWnd();
-		MessageBox(hwnd, _T("    You are too big"), _T("WIN"), MB_ICONWARNING);
-		closegraph();
-		std::cout << "2 Big\n";
 	}
 	else
 	{
@@ -635,14 +632,14 @@ void ServerWork()
 		{
 			AssignAddress();//分配地址
 		}
+		//先改变所有Player的位置再去judge最后发送Info
 		ServerProcessMsg();
-		//std::cout << cnt << "\n";
-		ServerSendInfo();
-		socketManager.ServerProcessSendMsgList();
 		MoveEnemy();
 		Judge();//判断玩家,敌人,食物是否有重合
+		ServerSendInfo();
+		socketManager.ServerProcessClientsSendMsgList();
 		FlushFood();
-		 
+		UpdateCientsState();
 	}
 }
 
@@ -656,15 +653,35 @@ void SetCursor()
 
 void Start()
 {
-	IMAGE img;
-	loadimage(&img, _T("images/Start.jpg"));
-	putimage(0, 0, &img);
-	settextstyle(50, 0, _T("微软雅黑")); // 设置字体大小为50，使用微软雅黑字体
-	//outtextxy(0, 0, _T("按任意键"));
-	//_getch();
-	Sleep(500);
-	//outtextxy(width * 3 / 4, height / 2, "Game start now!!!");
-	//登陆界面:待完善
+	initgraph(width, height);
+	int x1, y1, w1, h1;
+	DrawButton(x1 = width / 4, y1 = height * 3 / 8, w1 = width / 2, h1 = height / 4,
+		width / 4, height * 7 / 16, width / 26, height / 8, "开始游戏", 1);
+	int f = 1;
+	while (1)
+	{
+		ExMessage msg;
+		if (peekmessage(&msg, EM_MOUSE))
+		{
+			if (IsMouseOverButton(msg.x, msg.y, x1, y1, x1 + w1, y1 + h1))
+			{
+				if (msg.message == WM_LBUTTONDOWN)
+				{
+					break; // 退出主循环
+				}
+				else if (msg.message == WM_MOUSEMOVE)
+				{
+					f = 0;
+				}
+			}
+			else
+			{
+				f = 1;
+			}
+			DrawButton(x1 = width / 4, y1 = height * 3 / 8, w1 = width / 2, h1 = height / 4,
+				width / 4, height * 7 / 16, width / 26, height / 8, "开始游戏", f);
+		}
+	}
 }
 
 void FlushFood()//刷新食物
@@ -681,7 +698,21 @@ void FlushFood()//刷新食物
 		}
 	}
 }
-
+void UpdateCientsState()
+{
+	auto mp = socketManager.GetClientsState();
+	for (auto [x, y] : mp)
+	{
+		for (int i = 0; i < Players.size() && !y; i++)
+		{
+			if (Players[i].GetSocket() == x)
+			{
+				Players[i].SetAliveState(y);
+				break;
+			}
+		}
+	}
+}
 void Init()//服务端专用
 {
 	//初始化食物和Enemy
@@ -727,31 +758,41 @@ void Draw()//绘制地图,展示精灵和食物位置
 		}
 	}
 
-	int PlayerX = Player.GetPositionX();
-	int PlayerY = Player.GetPositionY();
-	double PlayerR = Player.GetRadius();
-	setfillcolor(Player.GetColor());
-	fillcircle(Player.GetPositionX(), Player.GetPositionY(), Player.GetRadius());
-
 	//绘制敌人
 	for (int i = 0; i < EnemyNum; i++)
 	{
-		if (!Enemy[i].GetAliveState())
+		if (Enemy[i].GetAliveState())
 		{
-			continue;
+			int x = Enemy[i].GetPositionX();
+			int y = Enemy[i].GetPositionY();
+			int color = Enemy[i].GetColor();
+			int r = Enemy[i].GetRadius();
+			setfillcolor(color);
+			fillcircle(x, y, r);
+			setbkcolor(color);
+			settextcolor(BLACK);
+			settextstyle(20, 0, _T("Consolas"));
+			outtextxy(x - 14, y - 5, (Enemy[i].GetName().c_str()));
 		}
-		setfillcolor(Enemy[i].GetColor());
-		fillcircle(Enemy[i].GetPositionX(), Enemy[i].GetPositionY(), Enemy[i].GetRadius());
 	}
+
 	//绘制玩家
 	for (int i = 0; i < Players.size(); i++)
 	{
-		int PlayerX = Players[i].GetPositionX();
-		int PlayerY = Players[i].GetPositionY();
-		double PlayerR = Players[i].GetRadius();
-		int color = Players[i].GetColor();
-		setfillcolor(color);
-		fillcircle(PlayerX, PlayerY, PlayerR);
+		if (Players[i].GetAliveState())
+		{
+			int PlayerX = Players[i].GetPositionX();
+			int PlayerY = Players[i].GetPositionY();
+			double PlayerR = Players[i].GetRadius();
+			int color = Players[i].GetColor();
+			setfillcolor(color);
+			fillcircle(PlayerX, PlayerY, PlayerR);
+			setbkcolor(color);
+			settextcolor(BLACK);
+			settextstyle(20, 0, _T("Consolas"));
+			outtextxy(PlayerX - 14, PlayerY - 5, (Players[i].GetName().c_str()));
+
+		}
 	}
 }
 
@@ -768,7 +809,6 @@ void Delay(DWORD ms)
 void MovePlayer()
 {
 	//向服务端发送msg
-	//先test Player的情况再Test enemy
 	int x = Player.GetPositionX();
 	int y = Player.GetPositionY();
 	double r = Player.GetRadius();
@@ -794,7 +834,7 @@ void MovePlayer()
 	{
 		SendMsg["direction"] = "F";//同一主机按F切换client
 	}
-	 
+
 	if (!SendMsg["direction"].isNull())
 	{
 		static int cnt = 0;
@@ -851,7 +891,7 @@ void Judge()//服务端专用,需要判断玩家之间,玩家和AI
 		if (2 * PlayerR >= min(mapw, maph))
 		{
 			Players[i].SetAliveState(0);
-			Json::Value msg = "dead";
+			Json::Value msg = "big";
 			socketManager.ServerAddSendMsgList(Players[i].GetSocket(), msg);
 			continue;
 		}
@@ -876,6 +916,8 @@ void Judge()//服务端专用,需要判断玩家之间,玩家和AI
 				{
 					Players[i].SetPositionY(NewRadius);
 				}
+				PlayerX = Players[i].GetPositionX();
+				PlayerY = Players[i].GetPositionY();
 				if (PlayerX + NewRadius > mapw)
 				{
 					Players[i].SetPositionX(mapw - NewRadius);
@@ -886,6 +928,77 @@ void Judge()//服务端专用,需要判断玩家之间,玩家和AI
 				Players[i].SetRadius(NewRadius);
 				//std::cout << "judge\n";
 				//std::cout << Players[i].GetRadius() << "\n";
+			}
+		}
+
+		// 玩家和玩家
+		for (int j = 0; j < Players.size(); j++)
+		{
+			if (i == j || !Players[j].GetAliveState())
+			{
+				continue;
+			}
+			int x1 = Players[i].GetPositionX();
+			int y1 = Players[i].GetPositionY();
+			double r1 = Players[i].GetRadius();
+			int x2 = Players[j].GetPositionX();
+			int y2 = Players[j].GetPositionY();
+			double r2 = Players[j].GetRadius();
+			double dis = sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));//确定不会爆int
+			if (dis <= r1 + r2)
+			{
+				double NewVolumn = Pi * (r1 * r1 + r2 * r2);
+				double NewRadius = sqrt(NewVolumn / Pi);
+				if (r1 >= r2)
+				{
+					Players[j].SetAliveState(0);
+					Players[i].SetRadius(NewRadius);
+					Json::Value msg = "eaten";
+					socketManager.ServerAddSendMsgList(Players[j].GetSocket(), msg);
+					if (x1 < NewRadius)
+					{
+						Players[i].SetPositionX(NewRadius);
+					}
+					if (y1 < NewRadius)
+					{
+						Players[i].SetPositionY(NewRadius);
+					}
+					x1 = Players[i].GetPositionX();
+					y1 = Players[i].GetPositionY();
+					if (x1 + NewRadius > mapw)
+					{
+						Players[i].SetPositionX(mapw - NewRadius);
+					}
+					if (y1 + NewRadius > maph)
+					{
+						Players[i].SetPositionY(maph - NewRadius);
+					}
+				}
+				else
+				{
+					Players[i].SetAliveState(0);
+					Players[j].SetRadius(NewRadius);
+					Json::Value msg = "eaten";
+					socketManager.ServerAddSendMsgList(Players[i].GetSocket(), msg);
+					if (x2 < NewRadius)
+					{
+						Players[j].SetPositionX(NewRadius);
+					}
+					if (y2 < NewRadius)
+					{
+						Players[j].SetPositionY(NewRadius);
+					}
+					x2 = Players[j].GetPositionX();
+					y2 = Players[j].GetPositionY();
+					if (x2 + NewRadius > mapw)
+					{
+						Players[j].SetPositionX(mapw - NewRadius);
+					}
+					if (y2 + NewRadius > maph)
+					{
+						Players[j].SetPositionY(maph - NewRadius);
+					}
+				}
 			}
 		}
 	}
@@ -935,13 +1048,14 @@ void Judge()//服务端专用,需要判断玩家之间,玩家和AI
 			{
 				if (PlayerR < r)
 				{
-					HWND hwnd = GetHWnd();
-					MessageBox(hwnd, _T("    You are dead"), _T("LOSER"), MB_ICONWARNING);
-					closegraph();
+					Players[i].SetAliveState(0);
+					Json::Value msg = "eaten";
+					socketManager.ServerAddSendMsgList(Players[i].GetSocket(), msg);
+					continue;
 				}
 				else
 				{
-					Enemy[j].SetAliveState(false);
+					Enemy[j].SetAliveState(0);
 					double NewVolumn = Pi * (r * r + PlayerR * PlayerR);
 					double NewRadius = sqrt(NewVolumn / Pi);
 					Players[i].SetRadius(NewRadius);
@@ -970,7 +1084,7 @@ void Judge()//服务端专用,需要判断玩家之间,玩家和AI
 					double NewRadius = sqrt(NewVolumn / Pi);
 					if (r1 >= r2)
 					{
-						Enemy[j].SetAliveState(false);
+						Enemy[j].SetAliveState(0);
 						Enemy[i].SetRadius(NewRadius);
 						if (x1 < NewRadius)
 						{
@@ -980,6 +1094,8 @@ void Judge()//服务端专用,需要判断玩家之间,玩家和AI
 						{
 							Enemy[i].SetPositionY(NewRadius);
 						}
+						x1 = Enemy[i].GetPositionX();
+						y1 = Enemy[i].GetPositionY();
 						if (x1 + NewRadius > mapw)
 						{
 							Enemy[i].SetPositionX(mapw - NewRadius);
@@ -991,7 +1107,7 @@ void Judge()//服务端专用,需要判断玩家之间,玩家和AI
 					}
 					else
 					{
-						Enemy[i].SetAliveState(false);
+						Enemy[i].SetAliveState(0);
 						Enemy[j].SetRadius(NewRadius);
 						if (x2 < NewRadius)
 						{
@@ -1001,6 +1117,8 @@ void Judge()//服务端专用,需要判断玩家之间,玩家和AI
 						{
 							Enemy[j].SetPositionY(NewRadius);
 						}
+						x2 = Enemy[j].GetPositionX();
+						y2 = Enemy[j].GetPositionY();
 						if (x2 + NewRadius > mapw)
 						{
 							Enemy[j].SetPositionX(mapw - NewRadius);
