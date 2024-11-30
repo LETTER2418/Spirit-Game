@@ -1,5 +1,5 @@
 #include "SocketManager.h"
-
+ 
 SocketManager::SocketManager()
 {
 	int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -137,25 +137,24 @@ bool SocketManager::ServerAcceptClient()
 	else
 	{
 		std::cout << "服务器成功和第" << (int)ClientSockets.size() + 1 << "个客户端建立连接！" << "\n";
+		ClientsState[ClientSocket] = 1;
 		ClientSockets.push_back(ClientSocket);
 		return 1;
 	}
 }
-void SocketManager::ServerAddSendMsgList(SOCKET Client, Json::Value msg)
+void SocketManager::ServerAddSendMsgList(SOCKET Client, const Json::Value& msg)
 {
-
 	ServerSendMsgList[Client].push(msg);
 }
-bool  SocketManager::ServerSendMsg(SOCKET Client, Json::Value msg)
+bool  SocketManager::ServerSendMsg(SOCKET Client, const Json::Value &msg)
 {
 	//牢记:select用于ServerSocket时只能用于readfds判断是否有连接请求,不能用于判断服务端是否能数据读写
    //发送的消息出现问题 ****烫烫烫(Msg缓冲区超出Client缓冲区大小)
 
-	if (msg.isObject() && msg["type"] == 2)//Json有多种数据类型,只有对象才能使用[""]访问成员!!!否则程序会直接退出
+	if (!ClientsState[Client])
 	{
-		//std::cout << msg << "\n";
+		return 0;
 	}
-
 	str_tmp = msg.toStyledString();
 	str_tmp += "#";//结束符号
 	if (str_tmp.length() > RecvBufferSize)
@@ -173,64 +172,78 @@ bool  SocketManager::ServerSendMsg(SOCKET Client, Json::Value msg)
 	//std::cout << "Server send " << ++cnt << "th msg\n"<<str_tmp<<"\n";
 	if (size <= 0)
 	{
-		std::cout << "ServerSendMsg error " << WSAGetLastError() << "\n";
-		error = 1;
-		exit(0);
-		return 0;
-	}
-	else
-	{
-
+		if (WSAGetLastError() == 10054)
+		{
+			ClientsState[Client] = 0;
+		}
+		else
+		{
+			std::cout << "ServerSendMsg error " << WSAGetLastError() << "\n";
+			exit(0);
+			return 0;
+		}
 	}
 	return 1;
 }
-void SocketManager::ServerProcessSendMsgList()
+void SocketManager::ServerProcessClientSendMsgList(SOCKET Client)
 {
-	for (auto& [Client, MsgList] : ServerSendMsgList)
+	//std::lock_guard<std::mutex> lock(coutMutex);
+	auto &MsgList = ServerSendMsgList[Client];
+	if (!ClientsState[Client])
 	{
-		while (1)
+		return;
+	}
+	while (1)
+	{
+		FD_ZERO(&writefds);
+		FD_SET(Client, &writefds);
+		select(0, nullptr, &writefds, nullptr, &timeout);
+		//std::cout << "SendMsgList size==" << MsgList.size() << "\n";
+		if (FD_ISSET(Client, &writefds))
 		{
-			FD_ZERO(&writefds);
-			FD_SET(Client, &writefds);
-			select(0, nullptr, &writefds, nullptr, &timeout);
-			std::cout << "SendMsgList size==" << MsgList.size() << "\n";
-			if (FD_ISSET(Client, &writefds))
-			{
-				std::cout << "可写\n";
+			//std::cout << "可写\n";
 
-			}
-			else
-			{
-
-				std::cout << "不可写\n";
-			}
-			if (!FD_ISSET(Client, &writefds) || MsgList.empty())
-			{
-				break;
-			}
-
-			auto msg = MsgList.front();
+		}
+		else
+		{
+			//std::cout << "不可写\n";
+		}
+		if (!FD_ISSET(Client, &writefds) || MsgList.empty())
+		{
+			break;
+		}
+		msg = MsgList.front();
+		if (msg.isObject())
+		{
 			static int x = 0;
 			if (!msg["cnt"].isNull() && x != msg["cnt"].asInt())
 			{
 				x = msg["cnt"].asInt();
-				std::cout << "Server send  " << msg["cnt"] << "th msg's response\n";
+				//std::cout << "Server send  " << msg["cnt"] << "th msg's response\n";
+				//多客户端response过慢，需要优化，但是多线程没用(哭),埋个坑以后再填
 			}
-			ServerSendMsg(Client, msg);
-			MsgList.pop();
 		}
-
+		ServerSendMsg(Client, msg);
+		MsgList.pop();
 	}
 }
-Json::Value SocketManager::ServerRecvMsg(SOCKET Client)
+void SocketManager::ServerProcessClientsSendMsgList()
 {
-
+	for (auto& [Client, MsgList] : ServerSendMsgList)
+	{
+		//std::thread([this, Client]() { ServerProcessClientSendMsgList(Client); }).detach();
+		 ServerProcessClientSendMsgList(Client);
+	}
+}
+Json::Value& SocketManager::ServerRecvMsg(SOCKET Client)
+{
+	json_value = Json::nullValue;
 	FD_ZERO(&readfds);
 	FD_SET(Client, &readfds);
 	select(0, &readfds, nullptr, nullptr, &timeout);
 	if (!FD_ISSET(Client, &readfds))//!!! 对Client检查可读性，返回1表示该套接字上有数据可读
 	{
-		return Json::nullValue;
+		return json_value;
 	}
 	memset(RecvMsgBuffer, '\0', sizeof(RecvMsgBuffer));
 	int size = recv(Client, RecvMsgBuffer, sizeof(RecvMsgBuffer), 0);
@@ -238,20 +251,19 @@ Json::Value SocketManager::ServerRecvMsg(SOCKET Client)
 	if (size == 0)
 	{
 		std::cout << "Client closed\n";
-		return Json::nullValue;
+		return json_value;
 	}
 	//std::cout  << "Server recv \n" << RecvMsgBuffer << "\n"; 
-	Json::Value val = Json::nullValue;
 	str_tmp = std::string(RecvMsgBuffer);
 	if (str_tmp.find('#') == std::string::npos)
 	{
 		server_str_msg += RecvMsgBuffer;
-		return val;
+		return json_value;
 	}
 	int len = str_tmp.find('#');
 	server_str_msg += str_tmp.substr(0, len);
 	Json::Reader reader;
-	bool parsingSuccessful = reader.parse(server_str_msg, val);
+	bool parsingSuccessful = reader.parse(server_str_msg, json_value);
 	if (len + 1 >= str_tmp.size())
 	{
 		server_str_msg = "";
@@ -271,7 +283,7 @@ Json::Value SocketManager::ServerRecvMsg(SOCKET Client)
 		std::cout << "server parse fail\n";
 		exit(0);
 	}
-	return val;
+	return json_value;
 }
 void SocketManager::ServerRecvClientsMsg()
 {
@@ -279,14 +291,6 @@ void SocketManager::ServerRecvClientsMsg()
 	{
 		//先收到客户端的消息再发送指令
 		Json::Value msg = ServerRecvMsg(*it);
-		if (error == 0)
-		{
-			it++;
-		}
-		else
-		{
-			it = ClientSockets.erase(it);
-		}
 	}
 }
 std::vector<SOCKET> SocketManager::GetClientSockets()
@@ -322,7 +326,9 @@ void SocketManager::StartClient()
 	sockaddr_in serverAddr;
 	serverAddr.sin_family = AF_INET;
 	serverAddr.sin_port = htons(SERVER_PORT);
-	inet_pton(AF_INET, "127.0.0.1", &serverAddr.sin_addr);//绑定本机的环回地址
+	serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+	//inet_pton(AF_INET, "127.0.0.1", &serverAddr.sin_addr);//绑定本机的环回地址
 
 	// 连接到服务器
 	int connectResult = connect(ClientSocket, (SOCKADDR*)&serverAddr, sizeof(serverAddr));
@@ -337,31 +343,28 @@ void SocketManager::StartClient()
 	std::cout << "StartClient success\n";
 }
 
-Json::Value SocketManager::ClientRecvMsg()
+Json::Value& SocketManager::ClientRecvMsg()
 {
-
+	json_value = Json::nullValue;
 	FD_ZERO(&readfds);
-
 	FD_SET(ClientSocket, &readfds);
-
 	select(0, &readfds, nullptr, nullptr, &timeout);
-
 	if (!FD_ISSET(ClientSocket, &readfds))
 	{
-		return Json::nullValue;
+		return json_value;
 	}
 
 	memset(RecvMsgBuffer, '\0', sizeof(RecvMsgBuffer));
 
 	//find #就把str_msg的信息转成Json返回并清空str_msg
-	Json::Value val = Json::nullValue;
 	int state = recv(ClientSocket, RecvMsgBuffer, sizeof(RecvMsgBuffer), 0);
+	
 	str_tmp = std::string(RecvMsgBuffer);
 
 	if (str_tmp.find('#') == std::string::npos)
 	{
 		client_str_msg += RecvMsgBuffer;
-		return val;
+		return json_value;
 	}
 	int len = str_tmp.find('#');
 	client_str_msg += str_tmp.substr(0, len);
@@ -369,12 +372,12 @@ Json::Value SocketManager::ClientRecvMsg()
 	if (state == 0)
 	{
 		std::cout << "服务端已关闭连接\n";
-		return val;
+		return json_value;
 	}
 	else if (state != SOCKET_ERROR)
 	{
 		Json::Reader reader;
-		bool parsingSuccessful = reader.parse(client_str_msg, val);
+		bool parsingSuccessful = reader.parse(client_str_msg, json_value);
 		if (len + 1 >= str_tmp.size())
 		{
 			client_str_msg = "";
@@ -386,8 +389,7 @@ Json::Value SocketManager::ClientRecvMsg()
 		if (parsingSuccessful)
 		{
 			// static int cnt = 0;
-			// std::cout <<"client recv"<< cnt++ << "th msg\n";
-			//std::cout <<  val <<"  \n";
+			//std::cout <<"client recv"<< cnt++ << "th msg\n";
 		}
 		else
 		{
@@ -401,10 +403,9 @@ Json::Value SocketManager::ClientRecvMsg()
 		std::cout << "ClientRecvMsg error "<<WSAGetLastError()<<"\n";
 		exit(0);
 	}
-
-	return val;
+	return json_value;
 }
-void SocketManager::ClientSendMsg(Json::Value msg)
+void SocketManager::ClientSendMsg(const Json::Value& msg)
 {
 	str_tmp = msg.toStyledString();
 	str_tmp += '#';
@@ -422,8 +423,8 @@ void SocketManager::ClientSendMsg(Json::Value msg)
 	/*std::thread([&]() {send(ClientSocket, tmp, RecvBufferSize, 0); }).detach();
 	return;*/
 	int size = send(ClientSocket, tmp, RecvBufferSize, 0);
-	//static int cnt = 0;
-	//std::cout << "client send " << ++cnt << "th msg \n"<<str_tmp<<"\n";
+	/*static int cnt = 0;
+	std::cout << "client send " << ++cnt << "th msg \n"<<str_tmp<<"\n";*/
 	if (size == SOCKET_ERROR)
 	{
 		std::cout << "ClientSendMsg error" << WSAGetLastError() << "\n";
@@ -435,7 +436,7 @@ void SocketManager::ClientSendMsg(Json::Value msg)
 
 	}
 }
-void SocketManager::ClientAddSendMsgList(Json::Value msg)
+void SocketManager::ClientAddSendMsgList(const Json::Value& msg)
 {
 	ClientSendMsgList.push(msg);
 }
@@ -459,4 +460,8 @@ void SocketManager::ClientProcessSendMsgList()
 SOCKET SocketManager::GetClientSocket()
 {
 	return ClientSocket;
+}
+std::map<SOCKET, int> SocketManager::GetClientsState()
+{
+	return ClientsState;
 }
