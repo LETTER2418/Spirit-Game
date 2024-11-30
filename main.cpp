@@ -1,5 +1,6 @@
 #include "UI.h"
 #include "SocketManager.h"
+#include "MusicManager.h"
 #include<windows.h>
 #include<graphics.h>
 #include <iostream>
@@ -247,11 +248,10 @@ static int cnt = 0;
 
 int main()
 {
-	//MusicStart();//如果只有一台机器则只在服务端开启，防止重复
+	 
 	srand(time(0));
-	_getch();
 	//CompulsoryTask();
-	//SelectedTask();
+	SelectedTask();
 	return 0;
 }
 
@@ -326,12 +326,15 @@ Json::Value EnemyJson, PlayersJson;
 
 void SelectedTask()
 {
+	 
+
 	//首先生成服务端(这个服务端不能被关闭)
 
 	if (socketManager.StartServer())
 	{
 		/*FILE* file;
 		freopen_s(&file, "E:\\server_output.txt", "w", stdout);*/
+		MusicStart();//如果只有一台机器则只在服务端开启，防止重复
 		ServerWork();
 	}
 	else
@@ -1004,7 +1007,7 @@ void Judge()//服务端专用,需要判断玩家之间,玩家和AI
 	}
 
 	//敌人和食物
-	const int K2 = 100;//控制敌人体积增长
+	const int K2 = 300;//控制敌人体积增长
 	for (int i = 0; i < EnemyNum; i++)
 	{
 		int x = Enemy[i].GetPositionX();
